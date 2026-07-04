@@ -3,6 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+  font-src 'self' https://fonts.gstatic.com;
+  connect-src 'self'
+    https://geocode-maps.yandex.ru
+    https://nominatim.openstreetmap.org
+    https://router.project-osrm.org;
+  script-src 'self' 'unsafe-inline';
+  img-src 'self' data:;
+">
 <title>Калькулятор тарифа за рейс</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
@@ -209,7 +220,7 @@ input::placeholder{color:rgba(255,255,255,.28)}
 //           total  = base < min ? min + routing : base
 // ─────────────────────────────────────────────
 const TARIFFS = {
-  h_35: { h: 1832.2,  k: 54.55, min: 1500  },
+  h_35: { h: 1832.2,  k: 54.55, min: 14400 },
   h_5:  { h: 2812.5,  k: 43.08, min: 18000 },
   h_10: { h: 3906.3,  k: 60.34, min: 25000 },
   h_20: { h: 5156.3,  k: 85.11, min: 33000 }
@@ -430,7 +441,7 @@ function calc() {
 
   // Если base < минималки — берём минималку + routing
   // Если base >= минималки — берём base (routing уже заложен в расчёте)
-  const total = base < t.min ? t.min + routing : base;
+  const total = base < t.min ? t.min + routing : base + routing;
 
   const fmt = v => new Intl.NumberFormat('ru-RU').format(Math.round(v)) + ' ₽';
   const el  = $('ramount');
