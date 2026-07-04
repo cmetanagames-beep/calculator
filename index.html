@@ -667,11 +667,16 @@ $('routeBtn').addEventListener('click', async () => {
     const route = d.routes[0];
     const km  = (route.distance / 1000).toFixed(2);
     const hrs = (route.duration / 3600).toFixed(2);
-    $('km').value  = km;
-    $('hrs').value = hrs;
+$('km').value  = km;
+$('hrs').value = hrs;
 
-    await calcReturnKm();
-    updateReturnUI();
+// Автозаполнение: первый адрес — отправка, остальные — выгрузка
+const unloadCount = ready.length - 1;
+$('addr').value = unloadCount;
+$('pts').value  = unloadCount;
+
+await calcReturnKm();
+updateReturnUI();
 
     setInfo(`✅ Маршрут: ${km} км, ~${hrs} ч (${ready.length} точек)${returnEnabled && returnKm > 0 ? ` · Возврат: ${returnKm} км` : ''}`, 'ok');
     calc();
