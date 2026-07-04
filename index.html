@@ -388,10 +388,12 @@ $('returnRow').addEventListener('click', () => {
 async function calcReturnKm() {
   const ready = addrs.filter(a => a.c);
   if (ready.length < 2) { returnKm = 0; return; }
-    const last  = ready[ready.length - 1];
-  const first = ready[0];
+
+  // Возврат = весь маршрут в обратную сторону
+  const reversed = [...ready].reverse();
   try {
-    const url = `https://router.project-osrm.org/route/v1/driving/${last.c.lon},${last.c.lat};${first.c.lon},${first.c.lat}?overview=false`;
+    const coords = reversed.map(a => `${a.c.lon},${a.c.lat}`).join(';');
+    const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=false`;
     const r = await fetch(url);
     const d = await r.json();
     if (d.code === 'Ok' && d.routes.length) {
