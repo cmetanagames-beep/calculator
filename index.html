@@ -678,7 +678,10 @@ $('pts').value  = unloadCount;
 await calcReturnKm();
 updateReturnUI();
 
-    setInfo(`✅ Маршрут: ${km} км, ~${hrs} ч (${ready.length} точек)${returnEnabled && returnKm > 0 ? ` · Возврат: ${returnKm} км` : ''}`, 'ok');
+    const unloadCount = ready.length - 1;
+$('addr').value = unloadCount;
+$('pts').value  = unloadCount;
+setInfo(`✅ Маршрут: ${km} км, ~${hrs} ч (${ready.length} точек)${returnEnabled && returnKm > 0 ? ` · Возврат: ${returnKm} км` : ''}`, 'ok');
     calc();
   } catch (e) {
     setInfo(`❌ Ошибка маршрута: ${e.message}`, 'err');
