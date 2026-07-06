@@ -127,7 +127,6 @@ input::placeholder{color:rgba(255,255,255,.28)}
 
   <div class="card">
 
-    <!-- API ключ -->
     <div class="key-block" id="keyBlock">
       <div class="key-title">🔑 Яндекс Геокодер — для точного поиска адресов</div>
       <div class="key-body">
@@ -142,7 +141,6 @@ input::placeholder{color:rgba(255,255,255,.28)}
     </div>
     <div class="key-ok" id="keyOk">✅ Яндекс API подключён — поиск адресов работает точно</div>
 
-    <!-- Тип ТС -->
     <div>
       <div class="lbl">Тип транспортного средства</div>
       <select id="type">
@@ -153,7 +151,6 @@ input::placeholder{color:rgba(255,255,255,.28)}
       </select>
     </div>
 
-    <!-- Город по умолчанию -->
     <div>
       <div class="lbl">Город по умолчанию (для поиска адресов)</div>
       <input type="text" id="defCity" placeholder="Например: Мытищи или Москва">
@@ -163,7 +160,6 @@ input::placeholder{color:rgba(255,255,255,.28)}
     <div class="sec">🗺 Маршрут (адреса)</div>
     <div class="rlist" id="rlist"></div>
 
-    <!-- Возврат -->
     <div class="return-row" id="returnRow">
       <div class="chk" id="returnChk">
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -211,14 +207,6 @@ input::placeholder{color:rgba(255,255,255,.28)}
 <script>
 'use strict';
 
-// ─────────────────────────────────────────────
-//  ТАРИФЫ (исправлены по реальным данным Excel)
-//  Формула: byTime = h × (hrs + pts × 0.25)
-//           byKm   = k × km
-//           base   = byTime + byKm
-//           routing = ceil(addr / 3) × 350
-//           total  = base < min ? min + routing : base
-// ─────────────────────────────────────────────
 const TARIFFS = {
   h_35: { h: 1832.2,  k: 54.55, min: 14400 },
   h_5:  { h: 2812.5,  k: 43.08, min: 18000 },
@@ -226,13 +214,13 @@ const TARIFFS = {
   h_20: { h: 5156.3,  k: 85.11, min: 33000 }
 };
 
-const RUNIT = 350;   // стоимость одного блока из 3 адресов
-const PC    = 0.25;  // доп. часов на каждую точку выгрузки
+const RUNIT = 350;
+const PC    = 0.25;
 const $     = id => document.getElementById(id);
 const nv    = v  => { const x = parseFloat(v); return isFinite(x) ? x : 0; };
 
 /* ── API ключ ── */
-let YKEY = localStorage.getItem('ya_geo_key') || '';
+let YKEY = localStorage.getItem('ya_geo_key') || '739d8512-d9b6-428c-8281-ee42ccad006d';
 
 function applyKey(k) {
   YKEY = k.trim();
@@ -270,7 +258,6 @@ function normalizeAddr(q) {
 /* ── Яндекс геокодер ── */
 async function yandexGeo(q) {
   if (!YKEY) return null;
-
   const city = $('defCity').value.trim();
   const cityRe = city ? new RegExp(city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') : null;
   const hasCity = cityRe
@@ -278,15 +265,9 @@ async function yandexGeo(q) {
     : /москв|мытищ|королев|химк|люберц|подольск|балаших|ногинск|серпухов|дмитров|пушкин|щелков/i.test(q);
 
   const queries = [];
-  if (!hasCity && city) {
-    queries.push(`${city}, ${q}`);
-    queries.push(q);
-  } else if (!hasCity) {
-    queries.push(`Москва, ${q}`);
-    queries.push(q);
-  } else {
-    queries.push(q);
-  }
+  if (!hasCity && city) { queries.push(`${city}, ${q}`); queries.push(q); }
+  else if (!hasCity)    { queries.push(`Москва, ${q}`);  queries.push(q); }
+  else                  { queries.push(q); }
 
   const norm = normalizeAddr(q);
   if (norm !== q) {
@@ -309,12 +290,7 @@ async function yandexGeo(q) {
             const pos = go.Point.pos.split(' ');
             const name = go.name || '';
             const desc = go.description || '';
-            return {
-              display_name: desc ? `${name}, ${desc}` : name,
-              short: name, sub: desc,
-              lat: parseFloat(pos[1]),
-              lon: parseFloat(pos[0])
-            };
+            return { display_name: desc ? `${name}, ${desc}` : name, short: name, sub: desc, lat: parseFloat(pos[1]), lon: parseFloat(pos[0]) };
           });
         }
       }
@@ -329,12 +305,7 @@ async function yandexGeo(q) {
             const pos = go.Point.pos.split(' ');
             const name = go.name || '';
             const desc = go.description || '';
-            return {
-              display_name: desc ? `${name}, ${desc}` : name,
-              short: name, sub: desc,
-              lat: parseFloat(pos[1]),
-              lon: parseFloat(pos[0])
-            };
+            return { display_name: desc ? `${name}, ${desc}` : name, short: name, sub: desc, lat: parseFloat(pos[1]), lon: parseFloat(pos[0]) };
           });
         }
       }
@@ -388,10 +359,8 @@ $('returnRow').addEventListener('click', () => {
 async function calcReturnKm() {
   const ready = addrs.filter(a => a.c);
   if (ready.length < 2) { returnKm = 0; return; }
-
-  // Возврат = весь маршрут в обратную сторону
   const reversed = [...ready].reverse();
-  try {
+    try {
     const coords = reversed.map(a => `${a.c.lon},${a.c.lat}`).join(';');
     const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=false`;
     const r = await fetch(url);
@@ -440,10 +409,7 @@ function calc() {
   const byTime  = t.h * (hrs + pts * PC);
   const byKm    = t.k * km;
   const base    = byTime + byKm;
-
-  // Если base < минималки — берём минималку + routing
-  // Если base >= минималки — берём base (routing уже заложен в расчёте)
-  const total = base < t.min ? t.min + routing : base + routing;
+  const total   = base < t.min ? t.min + routing : base + routing;
 
   const fmt = v => new Intl.NumberFormat('ru-RU').format(Math.round(v)) + ' ₽';
   const el  = $('ramount');
@@ -669,18 +635,16 @@ $('routeBtn').addEventListener('click', async () => {
     const route = d.routes[0];
     const km  = (route.distance / 1000).toFixed(2);
     const hrs = (route.duration / 3600).toFixed(2);
-$('km').value  = km;
-$('hrs').value = hrs;
+    $('km').value  = km;
+    $('hrs').value = hrs;
 
-// Автозаполнение: первый адрес — отправка, остальные — выгрузка
-
-await calcReturnKm();
-updateReturnUI();
+    await calcReturnKm();
+    updateReturnUI();
 
     const unloadCount = ready.length - 1;
-$('addr').value = unloadCount;
-$('pts').value  = unloadCount;
-setInfo(`✅ Маршрут: ${km} км, ~${hrs} ч (${ready.length} точек)${returnEnabled && returnKm > 0 ? ` · Возврат: ${returnKm} км` : ''}`, 'ok');
+    $('addr').value = unloadCount;
+    $('pts').value  = unloadCount;
+    setInfo(`✅ Маршрут: ${km} км, ~${hrs} ч (${ready.length} точек)${returnEnabled && returnKm > 0 ? ` · Возврат: ${returnKm} км` : ''}`, 'ok');
     calc();
   } catch (e) {
     setInfo(`❌ Ошибка маршрута: ${e.message}`, 'err');
@@ -753,3 +717,4 @@ calc();
 </script>
 </body>
 </html>
+  
