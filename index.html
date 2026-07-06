@@ -3,18 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="
-  default-src 'self';
-  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-  font-src 'self' https://fonts.gstatic.com;
-  connect-src 'self'
-    https://geocode-maps.yandex.ru
-    https://nominatim.openstreetmap.org
-    https://router.project-osrm.org;
-  script-src 'self' 'unsafe-inline';
-  img-src 'self' data:;
-">
 <title>Калькулятор тарифа за рейс</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
@@ -22,10 +15,16 @@ body{font-family:'Inter',sans-serif;background:linear-gradient(135deg,#0f0c29,#3
 .wrap{width:100%;max-width:560px;display:flex;flex-direction:column;gap:16px}
 .header{display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:14px 20px;backdrop-filter:blur(20px)}
 .title{font-weight:800;font-size:16px;color:#fff;display:flex;align-items:center;gap:10px}
-.btns{display:flex;gap:8px}
+.btns{display:flex;gap:8px;flex-wrap:wrap}
 .btn{padding:8px 14px;border-radius:12px;font-size:13px;font-weight:700;cursor:pointer;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:rgba(255,255,255,.85);transition:.18s;outline:none;font-family:inherit}
 .btn:hover{background:rgba(255,255,255,.15)}
 .btn.primary{background:linear-gradient(135deg,#6366f1,#818cf8);color:#fff;border-color:transparent;box-shadow:0 4px 16px rgba(99,102,241,.4)}
+.btn.print-btn{background:linear-gradient(135deg,#0369a1,#0ea5e9);color:#fff;border-color:transparent;box-shadow:0 4px 16px rgba(14,165,233,.35)}
+.btn.print-btn:hover{box-shadow:0 6px 22px rgba(14,165,233,.5);transform:translateY(-1px)}
+.btn.opt-btn{background:linear-gradient(135deg,#d97706,#f59e0b);color:#fff;border-color:transparent;box-shadow:0 4px 16px rgba(245,158,11,.35)}
+.btn.opt-btn:hover{box-shadow:0 6px 22px rgba(245,158,11,.5);transform:translateY(-1px)}
+.btn.qr-btn{background:linear-gradient(135deg,#7c3aed,#a78bfa);color:#fff;border-color:transparent;box-shadow:0 4px 16px rgba(124,58,237,.35)}
+.btn.qr-btn:hover{box-shadow:0 6px 22px rgba(124,58,237,.5);transform:translateY(-1px)}
 .card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:24px;padding:24px;backdrop-filter:blur(20px);display:flex;flex-direction:column;gap:16px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .lbl{display:block;font-size:11px;font-weight:600;color:rgba(196,181,253,.75);margin-bottom:6px;letter-spacing:.5px;text-transform:uppercase}
@@ -37,16 +36,57 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
 input:focus,select:focus{border-color:rgba(129,140,248,.7);box-shadow:0 0 0 3px rgba(99,102,241,.2);background:rgba(255,255,255,.11)}
 input::placeholder{color:rgba(255,255,255,.28)}
 .sec{font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:rgba(196,181,253,.6)}
+.excel-block{display:flex;flex-direction:column;gap:10px}
+.excel-drop{border:2px dashed rgba(34,197,94,.4);border-radius:16px;padding:20px;text-align:center;cursor:pointer;transition:.2s;background:rgba(34,197,94,.04);position:relative}
+.excel-drop:hover,.excel-drop.drag{border-color:rgba(34,197,94,.8);background:rgba(34,197,94,.09)}
+.excel-drop input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.excel-drop-icon{font-size:28px;margin-bottom:6px}
+.excel-drop-title{font-size:13px;font-weight:700;color:#fff;margin-bottom:3px}
+.excel-drop-sub{font-size:11px;color:rgba(255,255,255,.4)}
+.excel-loaded{background:rgba(34,197,94,.07);border:1px solid rgba(34,197,94,.25);border-radius:14px;padding:12px 14px;display:none;flex-direction:column;gap:8px}
+.excel-loaded.show{display:flex}
+.excel-loaded-title{font-size:12px;font-weight:800;color:rgba(52,211,153,.9)}
+.excel-orders{display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;padding-right:2px}
+.excel-orders::-webkit-scrollbar{width:3px}
+.excel-orders::-webkit-scrollbar-thumb{background:rgba(52,211,153,.4);border-radius:3px}
+.excel-order-row{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:8px 10px;display:flex;align-items:center;gap:8px;transition:.15s}
+.excel-order-row.added{border-color:rgba(52,211,153,.35);background:rgba(52,211,153,.05)}
+.excel-order-row.not-found{border-color:rgba(248,113,113,.35);background:rgba(248,113,113,.05)}
+.eo-num{min-width:22px;height:22px;background:rgba(99,102,241,.3);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#a5b4fc;flex-shrink:0}
+.eo-info{flex:1;min-width:0}
+.eo-addr{font-size:12px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.eo-meta{font-size:10px;color:rgba(165,180,252,.6);margin-top:1px}
+.eo-status{font-size:10px;font-weight:700;white-space:nowrap}
+.eo-status.ok{color:rgba(52,211,153,.9)}
+.eo-status.fail{color:rgba(248,113,113,.8)}
+.eo-status.wait{color:rgba(251,191,36,.8)}
+.btn-eo-add{padding:4px 10px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;border:1px solid rgba(165,180,252,.3);background:rgba(99,102,241,.15);color:rgba(165,180,252,.9);outline:none;font-family:inherit;transition:.15s;white-space:nowrap;flex-shrink:0}
+.btn-eo-add:hover{background:rgba(99,102,241,.3)}
+.btn-eo-add:disabled{opacity:.4;cursor:not-allowed}
+.excel-actions{display:flex;gap:8px;flex-wrap:wrap}
+.btn-excel-all{flex:1;padding:9px 12px;border-radius:11px;font-size:12px;font-weight:700;cursor:pointer;border:none;background:linear-gradient(135deg,#059669,#10b981);color:#fff;outline:none;font-family:inherit;transition:.15s}
+.btn-warehouse{width:100%;padding:10px 16px;border-radius:13px;font-size:13px;font-weight:700;cursor:pointer;border:1.5px solid rgba(251,191,36,.4);background:rgba(251,191,36,.08);color:rgba(251,191,36,.95);outline:none;font-family:inherit;transition:.18s;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:4px}
+.btn-warehouse:hover{background:rgba(251,191,36,.18);border-color:rgba(251,191,36,.7);transform:translateY(-1px)}
+.btn-excel-clear{padding:9px 12px;border-radius:11px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid rgba(248,113,113,.3);background:rgba(248,113,113,.08);color:rgba(248,113,113,.8);outline:none;font-family:inherit;transition:.15s}
+.progress-wrap{display:none;flex-direction:column;gap:5px}
+.progress-wrap.show{display:flex}
+.progress-lbl{font-size:11px;color:rgba(165,180,252,.8);font-weight:600}
+.progress-bar{height:5px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,#6366f1,#10b981);border-radius:3px;transition:width .3s;width:0}
 .rlist{display:flex;flex-direction:column;gap:10px}
 .acard{background:rgba(255,255,255,.04);border:1.5px solid rgba(255,255,255,.08);border-radius:16px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;transition:.2s border-color}
 .acard.done{border-color:rgba(52,211,153,.4)}
 .acard.fail{border-color:rgba(248,113,113,.35)}
+.acard.notfound{border-color:rgba(251,191,36,.5);background:rgba(251,191,36,.04)}
 .atop{display:flex;align-items:center;gap:8px}
 .anum{min-width:26px;height:26px;background:rgba(99,102,241,.3);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#a5b4fc;flex-shrink:0}
 .acw{position:relative;flex:1}
 .acw input{width:100%;padding:9px 12px;font-size:13px;border-radius:12px}
 .acw input.ok{border-color:rgba(52,211,153,.6)!important;box-shadow:0 0 0 3px rgba(52,211,153,.1)!important}
 .acw input.bad{border-color:rgba(248,113,113,.5)!important}
+.acw input.notfound{border-color:rgba(251,191,36,.6)!important;box-shadow:0 0 0 3px rgba(251,191,36,.1)!important}
+.notfound-hint{font-size:11px;color:rgba(251,191,36,.85);background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.2);border-radius:8px;padding:6px 10px;display:none;line-height:1.5}
+.notfound-hint.show{display:block}
 .drop{display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#1a1740;border:1px solid rgba(165,180,252,.3);border-radius:13px;z-index:200;box-shadow:0 10px 40px rgba(0,0,0,.7);max-height:230px;overflow-y:auto}
 .drop.open{display:block}
 .di{padding:10px 14px;font-size:12px;color:rgba(255,255,255,.85);cursor:pointer;border-bottom:1px solid rgba(255,255,255,.05);line-height:1.45;transition:background .1s}
@@ -73,17 +113,23 @@ input::placeholder{color:rgba(255,255,255,.28)}
 .key-inp-row input{flex:1;padding:9px 12px;font-size:13px;font-family:monospace}
 .btn-ks{padding:9px 14px;border-radius:11px;font-size:13px;font-weight:700;cursor:pointer;border:none;background:linear-gradient(135deg,#6366f1,#818cf8);color:#fff;outline:none;font-family:inherit;white-space:nowrap}
 .key-ok{font-size:12px;font-weight:700;color:rgba(52,211,153,.9);padding:8px 14px;background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.25);border-radius:12px;display:none}
-.btn-row{display:flex;gap:8px}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap}
 .btn-add{flex:1;padding:10px 14px;border-radius:13px;font-size:13px;font-weight:700;cursor:pointer;border:1.5px dashed rgba(165,180,252,.35);background:rgba(99,102,241,.08);color:rgba(165,180,252,.8);transition:.18s;outline:none;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px}
 .btn-add:hover{background:rgba(99,102,241,.16);color:#a5b4fc}
 .btn-go{flex:1;padding:10px 14px;border-radius:13px;font-size:13px;font-weight:700;cursor:pointer;border:none;background:linear-gradient(135deg,#059669,#10b981);color:#fff;transition:.18s;outline:none;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;box-shadow:0 4px 14px rgba(16,185,129,.3)}
 .btn-go:hover:not(:disabled){box-shadow:0 6px 22px rgba(16,185,129,.45);transform:translateY(-1px)}
 .btn-go:disabled{opacity:.5;cursor:not-allowed}
+.btn-optimize{width:100%;padding:10px 16px;border-radius:13px;font-size:13px;font-weight:700;cursor:pointer;border:none;background:linear-gradient(135deg,#d97706,#f59e0b);color:#fff;outline:none;font-family:inherit;transition:.18s;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 4px 14px rgba(245,158,11,.3);display:none}
+.btn-optimize.show{display:flex}
+.btn-optimize:hover{box-shadow:0 6px 22px rgba(245,158,11,.45);transform:translateY(-1px)}
 .rinfo{border-radius:13px;padding:10px 14px;font-size:12px;font-weight:600;text-align:center;display:none;line-height:1.5}
 .rinfo.show{display:block}
 .rinfo.ok{background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);color:rgba(52,211,153,.9)}
 .rinfo.err{background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.2);color:rgba(248,113,113,.9)}
 .rinfo.warn{background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.2);color:rgba(251,191,36,.9)}
+.traffic-warn{background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25);border-radius:13px;padding:12px 16px;font-size:12px;font-weight:600;color:rgba(248,113,113,.9);display:none;line-height:1.6}
+.traffic-warn.show{display:block}
+.traffic-warn-title{font-size:13px;font-weight:800;margin-bottom:4px}
 .divider{height:1px;background:rgba(255,255,255,.08)}
 .return-row{display:flex;align-items:center;gap:12px;background:rgba(99,102,241,.08);border:1.5px solid rgba(99,102,241,.2);border-radius:14px;padding:12px 16px;cursor:pointer;transition:.18s}
 .return-row:hover{background:rgba(99,102,241,.14);border-color:rgba(99,102,241,.35)}
@@ -97,6 +143,10 @@ input::placeholder{color:rgba(255,255,255,.28)}
 .return-sub{font-size:11px;color:rgba(165,180,252,.6);margin-top:2px}
 .return-km{font-size:12px;font-weight:700;color:rgba(129,140,248,.9);background:rgba(99,102,241,.15);border:1px solid rgba(99,102,241,.25);border-radius:8px;padding:4px 10px;white-space:nowrap;display:none}
 .return-km.show{display:block}
+.map-wrap{border-radius:18px;overflow:hidden;border:1px solid rgba(255,255,255,.1);display:none;flex-direction:column}
+.map-wrap.show{display:flex}
+#map{height:280px;width:100%;background:#1a1740}
+.map-actions{display:flex;gap:8px;padding:10px;background:rgba(0,0,0,.2);flex-wrap:wrap}
 .result-card{position:relative;overflow:hidden;background:linear-gradient(135deg,#1e1b4b,#312e81,#4c1d95);border-radius:28px;padding:36px 28px 32px;display:flex;flex-direction:column;align-items:center;gap:12px;box-shadow:0 24px 64px rgba(79,70,229,.45),inset 0 0 0 1px rgba(255,255,255,.1)}
 .shimmer{position:absolute;inset:0;background:linear-gradient(105deg,transparent 30%,rgba(255,255,255,.06) 50%,transparent 70%);background-size:200% 100%;animation:sh 3s linear infinite;pointer-events:none}
 @keyframes sh{0%{background-position:200% center}100%{background-position:-200% center}}
@@ -106,28 +156,166 @@ input::placeholder{color:rgba(255,255,255,.28)}
 @keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.07)}70%{transform:scale(.97)}100%{transform:scale(1)}}
 .tags{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;z-index:1}
 .tag{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.14);color:rgba(255,255,255,.8);border-radius:20px;padding:5px 13px;font-size:12px;font-weight:600}
+.breakdown{display:flex;flex-direction:column;gap:6px;width:100%;z-index:1}
+.brow{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:rgba(255,255,255,.6);padding:4px 0;border-bottom:1px solid rgba(255,255,255,.06)}
+.brow:last-child{border-bottom:none;font-size:14px;font-weight:800;color:#fff}
+.brow span:last-child{font-weight:700;color:rgba(196,181,253,.9)}
+.brow:last-child span:last-child{color:#fff}
 .toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(70px);background:rgba(255,255,255,.12);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.2);color:#fff;padding:12px 28px;border-radius:40px;font-weight:700;font-size:14px;pointer-events:none;z-index:9999;transition:transform .35s cubic-bezier(.34,1.56,.64,1),opacity .35s;opacity:0}
 .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+
+/* ── QR Модалка ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);z-index:1000;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.show{display:flex}
+.modal{background:linear-gradient(135deg,#1e1b4b,#312e81);border:1px solid rgba(255,255,255,.15);border-radius:24px;padding:28px;max-width:380px;width:100%;display:flex;flex-direction:column;gap:16px;box-shadow:0 24px 64px rgba(0,0,0,.6)}
+.modal-title{font-size:16px;font-weight:800;color:#fff;display:flex;align-items:center;gap:10px}
+.modal-close{margin-left:auto;width:30px;height:30px;border-radius:50%;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.qr-container{background:#fff;border-radius:16px;padding:16px;display:flex;align-items:center;justify-content:center;min-height:200px}
+.qr-hint{font-size:12px;color:rgba(165,180,252,.7);text-align:center;line-height:1.6}
+.qr-links{display:flex;flex-direction:column;gap:8px}
+.qr-link-btn{padding:10px 16px;border-radius:12px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid rgba(165,180,252,.3);background:rgba(99,102,241,.15);color:rgba(165,180,252,.9);text-align:center;text-decoration:none;transition:.15s;display:block}
+.qr-link-btn:hover{background:rgba(99,102,241,.3);color:#fff}
+.qr-link-btn.ya{background:linear-gradient(135deg,rgba(255,51,51,.15),rgba(255,51,51,.08));border-color:rgba(255,51,51,.3);color:rgba(255,150,150,.9)}
+.qr-link-btn.ya:hover{background:rgba(255,51,51,.25)}
+
+/* ── Пробки блок ── */
+.traffic-block{background:rgba(255,255,255,.04);border:1.5px solid rgba(255,255,255,.08);border-radius:16px;padding:14px 16px;display:none;flex-direction:column;gap:8px}
+.traffic-block.show{display:flex}
+.traffic-title{font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:rgba(196,181,253,.6)}
+.traffic-rows{display:flex;flex-direction:column;gap:6px}
+.traffic-row{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:rgba(255,255,255,.7);padding:5px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+.traffic-row:last-child{border-bottom:none}
+.traffic-badge{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
+.traffic-badge.green{background:rgba(16,185,129,.15);color:rgba(52,211,153,.9);border:1px solid rgba(52,211,153,.25)}
+.traffic-badge.yellow{background:rgba(251,191,36,.1);color:rgba(251,191,36,.9);border:1px solid rgba(251,191,36,.25)}
+.traffic-badge.red{background:rgba(248,113,113,.1);color:rgba(248,113,113,.9);border:1px solid rgba(248,113,113,.25)}
+.traffic-badge.orange{background:rgba(249,115,22,.1);color:rgba(249,115,22,.9);border:1px solid rgba(249,115,22,.25)}
+
 @media(max-width:480px){.ramount{font-size:36px}.grid2{grid-template-columns:1fr}}
+/* ── Режимы ── */
+.mode-full .simple-only { display: none !important; }
+.mode-simple .full-only { display: none !important; }
+.mode-simple .card { gap: 12px; }
+#modeBtn.simple { background: linear-gradient(135deg,#059669,#10b981); color:#fff; border-color:transparent; box-shadow:0 4px 16px rgba(16,185,129,.4); }
+@media print{
+  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+  body{background:#fff!important;padding:0!important;margin:0!important;display:block!important}
+  .wrap,.toast,.modal-overlay{display:none!important}
+  #printArea{display:block!important;width:100%!important;max-width:100%!important;padding:0!important;margin:0!important}
+}
+#printArea{display:none;font-family:'Inter',sans-serif}
+.pdf-page{width:210mm;min-height:297mm;margin:0 auto;padding:20mm 18mm;background:#fff;color:#1a1a2e;box-sizing:border-box}
+.pdf-header{display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid #6366f1;padding-bottom:14px;margin-bottom:20px}
+.pdf-logo{display:flex;align-items:center;gap:10px}
+.pdf-logo-icon{width:44px;height:44px;background:linear-gradient(135deg,#6366f1,#818cf8);border-radius:12px;display:flex;align-items:center;justify-content:center}
+.pdf-logo-text{font-size:18px;font-weight:900;color:#1e1b4b;line-height:1.2}
+.pdf-logo-sub{font-size:11px;color:#6b7280;font-weight:500}
+.pdf-date{text-align:right;font-size:12px;color:#6b7280;line-height:1.6}
+.pdf-date strong{display:block;font-size:13px;color:#374151;font-weight:700}
+.pdf-total-block{background:linear-gradient(135deg,#1e1b4b,#312e81,#4c1d95);border-radius:20px;padding:28px 32px;text-align:center;margin-bottom:20px;position:relative;overflow:hidden}
+.pdf-total-block::before{content:'';position:absolute;top:-30px;right:-30px;width:120px;height:120px;background:rgba(255,255,255,.06);border-radius:50%}
+.pdf-total-label{font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:rgba(196,181,253,.7);margin-bottom:8px}
+.pdf-total-amount{font-size:54px;font-weight:900;color:#fff;letter-spacing:-2px;line-height:1;margin-bottom:14px}
+.pdf-total-tags{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.pdf-tag{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.9);border-radius:20px;padding:4px 12px;font-size:11px;font-weight:600}
+.pdf-cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.pdf-section{background:#f8f7ff;border:1.5px solid #e0e0f0;border-radius:14px;padding:16px 18px}
+.pdf-section-title{font-size:10px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:#6366f1;margin-bottom:12px;display:flex;align-items:center;gap:6px}
+.pdf-row{display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:5px 0;border-bottom:1px solid #ebebf5;color:#374151}
+.pdf-row:last-child{border-bottom:none}
+.pdf-row span:last-child{font-weight:700;color:#1e1b4b}
+.pdf-row.total-row{margin-top:6px;padding-top:8px;border-top:2px solid #6366f1;border-bottom:none;font-size:14px;font-weight:800;color:#1e1b4b}
+.pdf-row.total-row span:last-child{color:#6366f1}
+.pdf-route-section{background:#f8f7ff;border:1.5px solid #e0e0f0;border-radius:14px;padding:16px 18px;margin-bottom:16px}
+.pdf-route-list{display:flex;flex-direction:column;gap:0}
+
+/* ── Таблица маршрута для водителя ── */
+.pdf-driver-table{width:100%;border-collapse:collapse;margin-top:8px}
+.pdf-driver-table th{background:#6366f1;color:#fff;font-size:10px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;padding:8px 10px;text-align:left}
+.pdf-driver-table td{padding:10px 10px;font-size:12px;color:#374151;border-bottom:1px solid #e5e7eb;vertical-align:top}
+.pdf-driver-table tr:nth-child(even) td{background:#f8f7ff}
+.pdf-driver-table tr:hover td{background:#ede9fe}
+.pdf-dt-num{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900;color:#fff;flex-shrink:0}
+.pdf-dt-num.start{background:#10b981}
+.pdf-dt-num.middle{background:#6366f1}
+.pdf-dt-num.end{background:#f43f5e}
+.pdf-dt-check{width:22px;height:22px;border:2px solid #d1d5db;border-radius:5px;display:inline-block}
+.pdf-route-item{display:flex;align-items:flex-start;gap:12px;padding:8px 0;position:relative}
+.pdf-route-item:not(:last-child)::after{content:'';position:absolute;left:13px;top:30px;bottom:-8px;width:2px;background:linear-gradient(to bottom,#6366f1,#a5b4fc)}
+.pdf-dot{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:#fff;flex-shrink:0;z-index:1}
+.pdf-dot.start{background:#10b981}
+.pdf-dot.middle{background:#6366f1}
+.pdf-dot.end{background:#f43f5e}
+.pdf-addr-text{font-size:12px;color:#374151;line-height:1.5;padding-top:5px;font-weight:500}
+.pdf-addr-label{font-size:10px;color:#9ca3af;font-weight:600;letter-spacing:.5px;text-transform:uppercase}
+.pdf-footer{margin-top:auto;padding-top:16px;border-top:1px solid #e0e0f0;display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#9ca3af}
+.pdf-footer strong{color:#6366f1}
+.pdf-sign-block{background:#f8f7ff;border:1.5px solid #e0e0f0;border-radius:14px;padding:14px 18px;margin-bottom:16px;display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.pdf-sign-item{font-size:11px;color:#6b7280}
+.pdf-sign-line{height:1px;background:#d1d5db;margin:20px 0 4px}
+.pdf-sign-hint{font-size:10px;color:#9ca3af}
+.excel-loaded {
+  transition: max-height 0.4s cubic-bezier(0.4,0,0.2,1), 
+              opacity 0.3s ease, 
+              transform 0.3s ease,
+              margin 0.3s ease;
+  max-height: 600px;
+  opacity: 1;
+  transform: translateY(0);
+  overflow: hidden;
+}
+.excel-loaded.hide {
+  max-height: 0 !important;
+  opacity: 0;
+  transform: translateY(-8px);
+  margin: 0 !important;
+  pointer-events: none;
+}
+.btn-excel-toggle {
+  width: 100%;
+  padding: 9px 14px;
+  border-radius: 11px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid rgba(52,211,153,.3);
+  background: rgba(52,211,153,.07);
+  color: rgba(52,211,153,.9);
+  outline: none;
+  font-family: inherit;
+  transition: .2s;
+  display: none;
+}
+.btn-excel-toggle.show {
+  display: block;
+}
+.btn-excel-toggle:hover {
+  background: rgba(52,211,153,.15);
+  border-color: rgba(52,211,153,.6);
+}
 </style>
 </head>
 <body>
 <div class="wrap">
-
   <div class="header">
     <div class="title">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a5b4fc" stroke-width="1.8"><rect x="2" y="7" width="20" height="13" rx="3"/><path d="M7 7V5a2 2 0 012-2h6a2 2 0 012 2v2"/><path d="M12 12v4m-2-2h4" stroke-linecap="round"/></svg>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a5b4fc" stroke-width="1.8">
+        <rect x="2" y="7" width="20" height="13" rx="3"/>
+        <path d="M7 7V5a2 2 0 012-2h6a2 2 0 012 2v2"/>
+        <path d="M12 12v4m-2-2h4" stroke-linecap="round"/>
+      </svg>
       Калькулятор тарифа за рейс
     </div>
     <div class="btns">
+      <button class="btn" id="modeBtn" onclick="toggleMode()">⚡ Простой режим</button>
       <button class="btn" id="resetBtn">↺ Сброс</button>
+      <button class="btn print-btn" id="printBtn">🖨️ PDF</button>
       <button class="btn primary" id="copyBtn">Скопировать</button>
     </div>
   </div>
 
-  <div class="card">
-
-    <div class="key-block" id="keyBlock">
+  <div class="card" id="mainCard">
+    <div class="key-block full-only" id="keyBlock">
       <div class="key-title">🔑 Яндекс Геокодер — для точного поиска адресов</div>
       <div class="key-body">
         1. Откройте <a href="https://developer.tech.yandex.ru" target="_blank">developer.tech.yandex.ru</a><br>
@@ -151,47 +339,125 @@ input::placeholder{color:rgba(255,255,255,.28)}
       </select>
     </div>
 
-    <div>
-      <div class="lbl">Город по умолчанию (для поиска адресов)</div>
-      <input type="text" id="defCity" placeholder="Например: Мытищи или Москва">
+<div style="display:none">
+  <div class="lbl">Город по умолчанию</div>
+  <input type="text" id="defCity" placeholder="Например: Мытищи или Москва" value="Мытищи">
+</div>
+
+<div class="divider full-only"></div>
+<div class="sec full-only">📊 Загрузка заказов из Excel</div>
+<div class="excel-block full-only">
+      <div class="excel-drop" id="excelDrop">
+        <input type="file" id="excelFile" accept=".xlsx,.xls,.csv">
+        <div class="excel-drop-icon">📂</div>
+        <div class="excel-drop-title">Перетащите файл Excel сюда</div>
+        <div class="excel-drop-sub">или нажмите для выбора · .xlsx .xls .csv</div>
+      </div>
+      <div class="progress-wrap" id="progressWrap">
+        <div class="progress-lbl" id="progressLbl">Геокодирование адресов...</div>
+        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      </div>
+      <div class="excel-loaded" id="excelLoaded">
+        <div class="excel-loaded-title" id="excelLoadedTitle">📋 Загружено заказов: 0</div>
+        <div class="excel-orders" id="excelOrders"></div>
+<button class="btn-excel-toggle" id="excelToggleBtn" onclick="toggleExcelList()">
+  📋 Показать список адресов
+</button>
+        <div class="excel-actions">
+          <button class="btn-excel-all" id="excelAddAll">➕ Добавить все в маршрут</button>
+          <button class="btn-excel-clear" id="excelClear">🗑 Очистить</button>
+        </div>
+      </div>
     </div>
 
-    <div class="divider"></div>
-    <div class="sec">🗺 Маршрут (адреса)</div>
-    <div class="rlist" id="rlist"></div>
+<div class="divider full-only"></div>
+<div class="sec full-only">🗺 Маршрут (адреса)</div>
 
-    <div class="return-row" id="returnRow">
-      <div class="chk" id="returnChk">
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-          <path d="M2 6l3 3 5-5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<button class="btn-warehouse full-only" id="warehouseBtn" onclick="fillWarehouse()">
+      🏭 Со склада Мытищи
+    </button>
+
+<div class="rlist full-only" id="rlist"></div>
+
+<!-- Кнопка оптимизации -->
+<button class="btn-optimize full-only" id="optimizeBtn">
+      ✨ Оптимизировать маршрут (TSP)
+    </button>
+
+<div class="return-row" id="returnRow">
+  <div class="chk" id="returnChk">
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+      <path d="M2 6l3 3 5-5" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </div>
+  <div class="return-text">
+    <div class="return-title">🔄 Возврат на начальный адрес</div>
+    <div class="return-sub" id="returnSub">Учесть километраж обратного пути</div>
+  </div>
+  <div class="return-km" id="returnKm"></div>
+</div>
+<button class="btn-go simple-only" id="simpleCalcBtn" style="width:100%;margin-top:8px">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+  Рассчитать
+</button>
+
+<div class="btn-row full-only">
+  <button class="btn-add" id="addBtn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <path d="M12 5v14M5 12h14"/>
         </svg>
-      </div>
-      <div class="return-text">
-        <div class="return-title">🔄 Возврат на начальный адрес</div>
-        <div class="return-sub" id="returnSub">Учесть километраж обратного пути</div>
-      </div>
-      <div class="return-km" id="returnKm"></div>
-    </div>
-
-    <div class="btn-row">
-      <button class="btn-add" id="addBtn">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
         Добавить адрес
       </button>
       <button class="btn-go" id="routeBtn">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+          <circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>
+        </svg>
         Рассчитать маршрут
       </button>
     </div>
-    <div class="rinfo" id="rinfo"></div>
+
+    <div class="rinfo full-only" id="rinfo"></div>
+
+    <!-- Блок пробок -->
+    <div class="traffic-block full-only" id="trafficBlock">
+      <div class="traffic-title">🚦 Анализ пробок и времени в пути</div>
+      <div class="traffic-rows" id="trafficRows"></div>
+    </div>
+
+    <!-- Предупреждение о пробках -->
+    <div class="traffic-warn full-only" id="trafficWarn">
+      <div class="traffic-warn-title">⚠️ Сильные пробки на маршруте!</div>
+      <div id="trafficWarnText"></div>
+    </div>
+
+    <div class="map-wrap full-only" id="mapWrap">
+      <div id="map"></div>
+      <div class="map-actions">
+        <button class="btn qr-btn" id="qrBtn" style="font-size:12px;padding:7px 14px">📱 QR-код маршрута</button>
+        <button class="btn" id="yaNavBtn" style="font-size:12px;padding:7px 14px;background:rgba(255,51,51,.15);border-color:rgba(255,51,51,.3);color:rgba(255,150,150,.9)">🗺 Открыть в Яндекс</button>
+      </div>
+    </div>
 
     <div class="divider"></div>
+    <div class="sec">⚙️ Параметры</div>
 
     <div class="grid2">
-      <div><div class="lbl">Пробег, км</div><input id="km" type="number" step="0.01" min="0" value="0"></div>
-      <div><div class="lbl">Время на рейс, ч</div><input id="hrs" type="number" step="0.01" min="0" value="0"></div>
-      <div><div class="lbl">Адресов выгрузки</div><input id="addr" type="number" step="1" min="1" value="1"></div>
-      <div><div class="lbl">Точек выгрузки</div><input id="pts" type="number" step="1" min="1" value="1"></div>
+      <div>
+        <div class="lbl">Километраж (км)</div>
+        <input id="km" type="number" step="0.01" min="0" value="0">
+      </div>
+      <div>
+        <div class="lbl">Время (часы)</div>
+        <input id="hrs" type="number" step="0.01" min="0" value="0">
+      </div>
+      <div>
+        <div class="lbl">Адресов выгрузки</div>
+        <input id="addr" type="number" step="1" min="1" value="1">
+      </div>
+      <div>
+        <div class="lbl">Точек выгрузки</div>
+        <input id="pts" type="number" step="1" min="1" value="1">
+      </div>
     </div>
   </div>
 
@@ -200,141 +466,240 @@ input::placeholder{color:rgba(255,255,255,.28)}
     <div class="rlabel">Итого к оплате</div>
     <div class="ramount" id="ramount">—</div>
     <div class="tags" id="tags"></div>
+    <div class="divider" style="width:100%;opacity:.3"></div>
+    <div class="breakdown" id="breakdown"></div>
   </div>
 </div>
+
+<!-- QR Модалка -->
+<div class="modal-overlay" id="qrModal">
+  <div class="modal">
+    <div class="modal-title">
+      📱 QR-код маршрута
+      <button class="modal-close" id="qrModalClose">✕</button>
+    </div>
+    <div class="qr-container" id="qrContainer"></div>
+    <div class="qr-hint">
+      Водитель сканирует QR-код телефоном → маршрут открывается в Яндекс Навигаторе
+    </div>
+    <div class="qr-links">
+      <a class="qr-link-btn ya" id="qrYaLink" href="#" target="_blank">🗺 Открыть в Яндекс Навигаторе</a>
+      <a class="qr-link-btn" id="qrGoogleLink" href="#" target="_blank">🌐 Открыть в Google Maps</a>
+    </div>
+  </div>
+</div>
+
+<div id="printArea">
+  <div class="pdf-page">
+    <div class="pdf-header">
+      <div class="pdf-logo">
+        <div class="pdf-logo-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2">
+            <rect x="2" y="7" width="20" height="13" rx="3"/>
+            <path d="M7 7V5a2 2 0 012-2h6a2 2 0 012 2v2"/>
+            <path d="M12 12v4m-2-2h4" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div>
+          <div class="pdf-logo-text">Калькулятор тарифа</div>
+          <div class="pdf-logo-sub">Расчёт стоимости рейса</div>
+        </div>
+      </div>
+      <div class="pdf-date">
+        <strong id="pdf-date-val"></strong>
+        Документ сформирован автоматически
+      </div>
+    </div>
+    <div class="pdf-total-block">
+      <div class="pdf-total-label">Итого к оплате</div>
+      <div class="pdf-total-amount" id="pdf-amount">—</div>
+      <div class="pdf-total-tags" id="pdf-tags"></div>
+    </div>
+    <div class="pdf-cols">
+      <div class="pdf-section">
+        <div class="pdf-section-title">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+          Параметры рейса
+        </div>
+        <div id="pdf-params"></div>
+      </div>
+      <div class="pdf-section">
+        <div class="pdf-section-title">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2.5"><path d="M12 2v20M2 12h20"/></svg>
+          Разбивка стоимости
+        </div>
+        <div id="pdf-breakdown"></div>
+      </div>
+    </div>
+    <div class="pdf-route-section">
+      <div class="pdf-section-title">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2.5"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+        Маршрут следования
+      </div>
+      <div class="pdf-route-list" id="pdf-route"></div>
+    </div>
+    <div class="pdf-sign-block">
+      <div class="pdf-sign-item">
+        <div>Заказчик</div>
+        <div class="pdf-sign-line"></div>
+        <div class="pdf-sign-hint">подпись / ФИО</div>
+      </div>
+      <div class="pdf-sign-item">
+        <div>Водитель / Исполнитель</div>
+        <div class="pdf-sign-line"></div>
+        <div class="pdf-sign-hint">подпись / ФИО</div>
+      </div>
+    </div>
+    <div class="pdf-footer">
+      <div>Документ сформирован калькулятором тарифа за рейс</div>
+      <div>© <strong>Расчёт тарифа</strong> — автоматический документ</div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast">✓ Скопировано</div>
 
 <script>
 'use strict';
 
-const TARIFFS = {
-  h_35: { h: 1832.2,  k: 54.55, min: 14400 },
-  h_5:  { h: 2812.5,  k: 43.08, min: 18000 },
-  h_10: { h: 3906.3,  k: 60.34, min: 25000 },
-  h_20: { h: 5156.3,  k: 85.11, min: 33000 }
-};
+/* ══════════════════════════════════════
+   ⚡ РЕЖИМЫ
+══════════════════════════════════════ */
+let isSimpleMode = false;
 
+function toggleMode() {
+  isSimpleMode = !isSimpleMode;
+  const wrap = document.querySelector('.wrap');
+  const btn  = $('modeBtn');
+
+  if (isSimpleMode) {
+    wrap.classList.remove('mode-full');
+    wrap.classList.add('mode-simple');
+    btn.textContent = '🔧 Полный режим';
+    btn.classList.add('simple');
+    showToast('⚡ Простой режим — только параметры');
+  } else {
+    wrap.classList.remove('mode-simple');
+    wrap.classList.add('mode-full');
+    btn.textContent = '⚡ Простой режим';
+    btn.classList.remove('simple');
+    showToast('🔧 Полный режим — все функции');
+  }
+}
+
+// Запускаем в полном режиме по умолчанию
+document.querySelector('.wrap').classList.add('mode-full');
+
+const TARIFFS = {
+  h_35: { h: 1832.2, k: 54.55,  min: 14400 },
+  h_5:  { h: 2812.5, k: 43.08,  min: 18000 },
+  h_10: { h: 3906.3, k: 60.34,  min: 25000 },
+  h_20: { h: 5156.3, k: 85.11,  min: 33000 }
+};
 const RUNIT = 350;
 const PC    = 0.25;
 const $     = id => document.getElementById(id);
 const nv    = v  => { const x = parseFloat(v); return isFinite(x) ? x : 0; };
 
-/* ── API ключ ── */
-let YKEY = localStorage.getItem('ya_geo_key') || '739d8512-d9b6-428c-8281-ee42ccad006d';
-
+/* ══════════════════════════════════════
+   🔑 API КЛЮЧ
+══════════════════════════════════════ */
+let YKEY = localStorage.getItem('ya_geo_key') || '';
 function applyKey(k) {
   YKEY = k.trim();
   if (YKEY) {
     localStorage.setItem('ya_geo_key', YKEY);
     $('keyBlock').style.display = 'none';
-    $('keyOk').style.display = 'block';
+    $('keyOk').style.display    = 'block';
   } else {
     $('keyBlock').style.display = '';
-    $('keyOk').style.display = 'none';
+    $('keyOk').style.display    = 'none';
   }
 }
 applyKey(YKEY);
 $('saveKeyBtn').addEventListener('click', () => applyKey($('keyInp').value));
 $('keyInp').addEventListener('keydown', e => { if (e.key === 'Enter') applyKey($('keyInp').value); });
 
-/* ── Нормализация адреса ── */
+/* ══════════════════════════════════════
+   🔤 НОРМАЛИЗАЦИЯ АДРЕСА
+══════════════════════════════════════ */
 function normalizeAddr(q) {
   return q
-    .replace(/\bкорпус\s*/gi, 'к')
-    .replace(/\bкорп\.\s*/gi, 'к')
-    .replace(/\bстроение\s*/gi, 'с')
-    .replace(/\bстр\.\s*/gi, 'с')
-    .replace(/\bвладение\s*/gi, 'вл')
-    .replace(/\bвлад\.\s*/gi, 'вл')
-    .replace(/\bшоссе\b/gi, 'ш.')
-    .replace(/\bулица\b/gi, 'ул.')
-    .replace(/\bпроспект\b/gi, 'пр-т')
-    .replace(/\bпереулок\b/gi, 'пер.')
-    .replace(/\bбульвар\b/gi, 'б-р')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
+    .replace(/\bкорпус\s*/gi,'к').replace(/\bкорп\.\s*/gi,'к')
+    .replace(/\bстроение\s*/gi,'с').replace(/\bстр\.\s*/gi,'с')
+    .replace(/\bвладение\s*/gi,'вл').replace(/\bвлад\.\s*/gi,'вл')
+    .replace(/\bшоссе\b/gi,'ш.').replace(/\bулица\b/gi,'ул.')
+    .replace(/\bпроспект\b/gi,'пр-т').replace(/\bпереулок\b/gi,'пер.')
+    .replace(/\bбульвар\b/gi,'б-р').replace(/\s{2,}/g,' ').trim();
 }
 
-/* ── Яндекс геокодер ── */
+/* ══════════════════════════════════════
+   🗺 ГЕОКОДЕР
+══════════════════════════════════════ */
 async function yandexGeo(q) {
   if (!YKEY) return null;
   const city = $('defCity').value.trim();
-  const cityRe = city ? new RegExp(city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') : null;
-  const hasCity = cityRe
-    ? cityRe.test(q)
-    : /москв|мытищ|королев|химк|люберц|подольск|балаших|ногинск|серпухов|дмитров|пушкин|щелков/i.test(q);
-
+  const hasCity = city
+    ? new RegExp(city.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i').test(q)
+    : /москв|мытищ|королев|химк|люберц|подольск|балаших/i.test(q);
   const queries = [];
   if (!hasCity && city) { queries.push(`${city}, ${q}`); queries.push(q); }
   else if (!hasCity)    { queries.push(`Москва, ${q}`);  queries.push(q); }
   else                  { queries.push(q); }
-
   const norm = normalizeAddr(q);
   if (norm !== q) {
     if (!hasCity && city) queries.push(`${city}, ${norm}`);
     else if (!hasCity)    queries.push(`Москва, ${norm}`);
     queries.push(norm);
   }
-
   for (const query of queries) {
-    const fullQuery = /россия/i.test(query) ? query : query + ', Россия';
+    const fq = /россия/i.test(query) ? query : query + ', Россия';
     try {
-      const url1 = `https://geocode-maps.yandex.ru/1.x/?apikey=${YKEY}&geocode=${encodeURIComponent(fullQuery)}&format=json&results=10&lang=ru_RU&kind=house`;
-      const r1 = await fetch(url1);
-      if (r1.ok) {
-        const d1 = await r1.json();
-        const m1 = d1?.response?.GeoObjectCollection?.featureMember;
-        if (m1 && m1.length) {
-          return m1.map(m => {
-            const go = m.GeoObject;
+      for (const kind of ['house', '']) {
+        const url = `https://geocode-maps.yandex.ru/1.x/?apikey=${YKEY}&geocode=${encodeURIComponent(fq)}&format=json&results=10&lang=ru_RU${kind ? '&kind='+kind : ''}`;
+        const r = await fetch(url);
+        if (!r.ok) continue;
+        const d = await r.json();
+        const members = d?.response?.GeoObjectCollection?.featureMember;
+        if (members && members.length) {
+          return members.map(m => {
+            const go  = m.GeoObject;
             const pos = go.Point.pos.split(' ');
             const name = go.name || '';
             const desc = go.description || '';
-            return { display_name: desc ? `${name}, ${desc}` : name, short: name, sub: desc, lat: parseFloat(pos[1]), lon: parseFloat(pos[0]) };
+            return {
+              display_name: desc ? `${name}, ${desc}` : name,
+              short: name, sub: desc,
+              lat: parseFloat(pos[1]),
+              lon: parseFloat(pos[0])
+            };
           });
         }
       }
-      const url2 = `https://geocode-maps.yandex.ru/1.x/?apikey=${YKEY}&geocode=${encodeURIComponent(fullQuery)}&format=json&results=10&lang=ru_RU`;
-      const r2 = await fetch(url2);
-      if (r2.ok) {
-        const d2 = await r2.json();
-        const m2 = d2?.response?.GeoObjectCollection?.featureMember;
-        if (m2 && m2.length) {
-          return m2.map(m => {
-            const go = m.GeoObject;
-            const pos = go.Point.pos.split(' ');
-            const name = go.name || '';
-            const desc = go.description || '';
-            return { display_name: desc ? `${name}, ${desc}` : name, short: name, sub: desc, lat: parseFloat(pos[1]), lon: parseFloat(pos[0]) };
-          });
-        }
-      }
-    } catch (e) { continue; }
+    } catch(e) { continue; }
   }
   return null;
 }
 
-/* ── Nominatim fallback ── */
 async function nomGeo(q) {
-  const city = $('defCity').value.trim();
+  const city  = $('defCity').value.trim();
   const query = city && !/россия/i.test(q) ? `${city}, ${q}, Россия` : `${q}, Россия`;
   try {
     const r = await fetch(
       `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=6&countrycodes=ru&accept-language=ru`,
-      { headers: { 'Accept-Language': 'ru' } }
+      { headers: {'Accept-Language':'ru'} }
     );
     const d = await r.json();
     if (d && d.length) return d.map(p => ({
       display_name: p.display_name,
-      short: p.display_name.split(',').slice(0, 2).join(',').trim(),
-      sub:   p.display_name.split(',').slice(2, 5).join(',').trim(),
+      short: p.display_name.split(',').slice(0,2).join(',').trim(),
+      sub:   p.display_name.split(',').slice(2,5).join(',').trim(),
       lat: +p.lat, lon: +p.lon
     }));
-  } catch (e) {}
+  } catch(e) {}
   return [];
 }
 
-/* ── Главный геокодер ── */
 async function geocode(q) {
   const y = await yandexGeo(q);
   if (y && y.length) return y;
@@ -345,9 +710,895 @@ async function geocode(q) {
   return [];
 }
 
-/* ── Возврат ── */
+/* ══════════════════════════════════════
+   📊 EXCEL
+══════════════════════════════════════ */
+let excelData = [];
+const excelDrop = $('excelDrop');
+const excelFile = $('excelFile');
+
+excelDrop.addEventListener('dragover', e => { e.preventDefault(); excelDrop.classList.add('drag'); });
+excelDrop.addEventListener('dragleave', () => excelDrop.classList.remove('drag'));
+excelDrop.addEventListener('drop', e => {
+  e.preventDefault();
+  excelDrop.classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if (f) processExcelFile(f);
+});
+excelFile.addEventListener('change', () => {
+  if (excelFile.files[0]) processExcelFile(excelFile.files[0]);
+});
+
+function processExcelFile(file) {
+  if (typeof XLSX === 'undefined') { showToast('❌ Библиотека Excel не загружена'); return; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb  = XLSX.read(e.target.result, { type: 'array' });
+      const ws  = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      if (!raw.length) { showToast('⚠️ Файл пустой'); return; }
+      const firstRow = raw[0].map(c => String(c).toLowerCase().trim());
+      const hasHeaders = firstRow.some(c =>
+        ['адрес','address','addr','улица','доставка','клиент','имя','телефон','name','phone'].includes(c) ||
+        firstRow.some(c => c.includes('адрес') || c.includes('address'))
+      );
+      if (hasHeaders) {
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+        parseExcelRows(rows);
+      } else {
+        parseExcelRawRows(raw);
+      }
+    } catch(err) {
+      showToast('❌ Ошибка чтения файла: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function parseExcelRows(rows) {
+  if (!rows.length) { showToast('⚠️ Файл пустой'); return; }
+  excelData = [];
+  const keys = Object.keys(rows[0]);
+  let addrKey=null,nameKey=null,phoneKey=null,commentKey=null,sumKey=null,contactKey=null;
+  const lc = keys.map(k => k.toLowerCase().trim());
+
+  const findKey = (variants) => {
+    for (const v of variants) {
+      const idx = lc.findIndex(k => k === v || k.includes(v));
+      if (idx !== -1) return keys[idx];
+    }
+    return null;
+  };
+
+  addrKey    = findKey(['адрес доставки','адрес клиента','адрес получателя','адрес','address','addr','улица','доставка','delivery','куда']);
+  nameKey    = findKey(['имя','клиент','получатель','name','customer','фио','контакт']);
+  phoneKey   = findKey(['телефон','phone','тел','моб','mobile','номер']);
+  commentKey = findKey(['комментарий','comment','note','примечание','заметка','описание']);
+  sumKey     = findKey(['сумма','sum','amount','итого','стоимость','цена','price','total']);
+  contactKey = findKey(['контактное лицо','контакт','contact person','contact','ответственный','менеджер']);
+
+  if (!addrKey) { showToast('⚠️ Не найдена колонка с адресами'); return; }
+
+  rows.forEach((row,i) => {
+    const addr = String(row[addrKey]).trim();
+    if (!addr || addr === 'undefined' || addr === '') return;
+    excelData.push({
+      idx:     i,
+      address: addr,
+      name:    nameKey    ? String(row[nameKey]).trim()    : '',
+      phone:   phoneKey   ? String(row[phoneKey]).trim()   : '',
+      comment: commentKey ? String(row[commentKey]).trim() : '',
+      sum:     sumKey     ? String(row[sumKey]).trim()     : '',
+      contact: contactKey ? String(row[contactKey]).trim() : '',
+      geo: null, status: 'wait', added: false
+    });
+  });
+
+  if (!excelData.length) { showToast('⚠️ Не найдено ни одного адреса'); return; }
+  renderExcelOrders();
+  $('excelLoaded').classList.add('show');
+  showToast(`✅ Загружено ${excelData.length} адресов`);
+  geocodeExcelAll();
+}
+
+// Проверяет — похожа ли строка на координаты
+function looksLikeCoord(str) {
+  if (!str || str.length < 5) return false;
+  // Ищем два числа вида 55.xxxxxx, 37.xxxxxx
+  const parts = str.replace(/[^\d.,\s\-]/g, '').trim().split(/[\s,;]+/).filter(p => p.length > 0);
+  if (parts.length < 2) return false;
+  const a = parseFloat(parts[0].replace(',', '.'));
+  const b = parseFloat(parts[1].replace(',', '.'));
+  return isValidCoord(a, b) || isValidCoord(b, a);
+}
+
+// Парсит ячейку с координатами → { lat, lon } или null
+function parseCoordCell(str) {
+  if (!str || str.length < 5) return null;
+
+  // Убираем всё кроме цифр, точки, запятой, пробела, минуса
+  const cleaned = str.replace(/[^\d.,\s\-]/g, '').trim();
+
+  // Разбиваем на части по пробелу, запятой или точке с запятой
+  const parts = cleaned.split(/[\s,;]+/).filter(p => p.length > 0);
+
+  if (parts.length < 2) return null;
+
+  const a = parseFloat(parts[0].replace(',', '.'));
+  const b = parseFloat(parts[1].replace(',', '.'));
+
+  if (!isFinite(a) || !isFinite(b)) return null;
+
+  // Для России: lat 41-82, lon 19-190
+  if (isValidCoord(a, b)) return { lat: a, lon: b };
+  if (isValidCoord(b, a)) return { lat: b, lon: a }; // перепутаны — исправляем
+
+  return null;
+}
+
+function tryParseCoords(str) {
+  if (!str) return null;
+  const s = String(str).trim();
+  const m1 = s.match(/^(-?\d{1,3}[.,]\d{4,})\s*[,;\s]\s*(-?\d{1,3}[.,]\d{4,})$/);
+  if (m1) {
+    const a = parseFloat(m1[1].replace(',','.'));
+    const b = parseFloat(m1[2].replace(',','.'));
+    // Проверяем — не перепутаны ли lat и lon местами
+    if (isValidCoord(a, b)) return { lat: a, lon: b };
+    if (isValidCoord(b, a)) return { lat: b, lon: a }; // ← автоисправление
+  }
+  return null;
+}
+
+function isValidCoord(lat,lon) {
+  return isFinite(lat) && isFinite(lon) &&
+    lat >= 41 && lat <= 82 && lon >= 19 && lon <= 190;
+}
+
+function parseExcelRawRows(raw) {
+  if (!raw.length) { showToast('⚠️ Файл пустой'); return; }
+  excelData = [];
+  let headerRowIdx = -1;
+  let colMap = {};
+
+  // Ищем строку заголовков
+  for (let i = 0; i < Math.min(10, raw.length); i++) {
+    const row    = raw[i];
+    const rowStr = row.map(c => String(c||'').toLowerCase().trim());
+    const addrIdx = rowStr.findIndex(c => c.includes('адрес доставки') || c === 'адрес');
+    if (addrIdx !== -1) {
+      headerRowIdx = i;
+
+      // Ищем колонку с координатами по заголовку
+      let coordsIdx = rowStr.findIndex(c =>
+        c === 'координаты' || c === 'coords' || c === 'гео' || c === 'geo' ||
+        c.includes('координат') || c === 'lat/lon' || c === 'lat, lon'
+      );
+
+      // ✅ Если колонка координат не найдена по заголовку —
+      // ищем последнюю колонку у которой в первых строках данных есть координаты
+      if (coordsIdx === -1) {
+        // Смотрим первые 5 строк данных
+        const dataRows = raw.slice(i + 1, i + 6);
+        for (let col = row.length - 1; col >= 0; col--) {
+          let foundCoord = false;
+          for (const dataRow of dataRows) {
+            const cell = String(dataRow[col] || '').trim();
+            if (looksLikeCoord(cell)) {
+              foundCoord = true;
+              break;
+            }
+          }
+          if (foundCoord) {
+            coordsIdx = col;
+            console.log(`📍 Колонка координат найдена автоматически: индекс ${col}`);
+            break;
+          }
+        }
+      }
+
+      colMap = {
+        addr:    addrIdx,
+        client:  rowStr.findIndex(c => c === 'клиент' || c.includes('клиент')),
+        phone:   rowStr.findIndex(c => c.includes('контактное лицо') || c.includes('телефон')),
+        sum:     rowStr.findIndex(c => c === 'сумма' || c.includes('сумма')),
+        order:   rowStr.findIndex(c => c.includes('номер заказа') || c === 'номер'),
+        comment: rowStr.findIndex(c => c.includes('комментар')),
+        coords:  coordsIdx
+      };
+
+      console.log('📋 Найдены колонки:', colMap);
+      console.log('📍 Индекс колонки координат:', coordsIdx);
+      break;
+    }
+  }
+
+  if (headerRowIdx === -1) { showToast('⚠️ Не найдена колонка "Адрес доставки"'); return; }
+
+  const seen = new Map();
+
+  raw.slice(headerRowIdx + 1).forEach((row, i) => {
+    if (!row || !row.length) return;
+
+    const addr   = String(row[colMap.addr]   || '').trim();
+    const client = colMap.client  !== -1 ? String(row[colMap.client]  || '').trim() : '';
+    const phone  = colMap.phone   !== -1 ? String(row[colMap.phone]   || '').trim() : '';
+    const sum    = colMap.sum     !== -1 ? String(row[colMap.sum]     || '').trim() : '';
+    const order  = colMap.order   !== -1 ? String(row[colMap.order]   || '').trim() : '';
+    const comment= colMap.comment !== -1 ? String(row[colMap.comment] || '').trim() : '';
+
+    if (!addr || addr.length < 2) return;
+
+    // ✅ Читаем координаты из найденной колонки
+    let coordParsed = null;
+    if (colMap.coords !== -1) {
+      const coordRaw = String(row[colMap.coords] || '').trim();
+      coordParsed = parseCoordCell(coordRaw);
+      if (coordParsed) {
+        console.log(`✅ Строка ${i+1} "${addr.slice(0,20)}": lat=${coordParsed.lat}, lon=${coordParsed.lon}`);
+      } else if (coordRaw) {
+        console.warn(`⚠️ Строка ${i+1}: не удалось распарсить: "${coordRaw}"`);
+      }
+    }
+
+    // Каждая строка уникальна — используем индекс строки Excel
+    const key = `row_${i}`;
+
+if (seen.has(key)) {
+  const existing = seen.get(key);
+
+  // Объединяем имена
+  if (client && existing.name && existing.name !== client) {
+    existing.name = existing.name + ' / ' + client;
+  } else if (client && !existing.name) {
+    existing.name = client;
+  }
+
+  // Объединяем телефоны
+  if (phone && existing.phone && existing.phone !== phone) {
+    existing.phone   = existing.phone + ' / ' + phone;
+    existing.contact = existing.phone;
+  }
+
+
+// Объединяем суммы
+if (sum) {
+  const cleanSum = v => {
+    const n = parseFloat(String(v).replace(',', '.'));
+    return isFinite(n) ? n : null;
+  };
+  const newSumNum = cleanSum(sum);
+  const isSameClient = existing.name && client && existing.name === client;
+
+  if (!existing.sum) {
+    existing.sum = newSumNum !== null
+      ? String(Math.round(newSumNum * 100) / 100)
+      : sum.trim();
+  } else if (isSameClient) {
+    // Один клиент — складываем суммы
+    const oldNum = cleanSum(existing.sum);
+    if (oldNum !== null && newSumNum !== null) {
+      existing.sum = String(Math.round((oldNum + newSumNum) * 100) / 100);
+    }
+  } else {
+    // Разные клиенты — суммы через /
+    const newSumClean = newSumNum !== null
+      ? String(Math.round(newSumNum * 100) / 100)
+      : sum.trim();
+    const parts = existing.sum.split(' / ');
+    if (!parts.includes(newSumClean)) {
+      existing.sum = existing.sum + ' / ' + newSumClean;
+    }
+  }
+}
+
+  return;
+}
+    const entry = {
+      idx:     i,
+      address: addr,      // ← оригинальный адрес из Excel
+      name:    client,
+      phone, comment,
+      sum: sum ? String(Math.round(parseFloat(String(sum).replace(',', '.')) * 100) / 100) : '',
+      order,
+      contact: phone,
+      geo:    coordParsed ? { lat: coordParsed.lat, lon: coordParsed.lon } : null,
+      status: coordParsed ? 'ok' : 'wait',
+      added:  false
+    };
+
+    seen.set(key, entry);
+    excelData.push(entry);
+  });
+
+  if (!excelData.length) { showToast('⚠️ Не найдено ни одного адреса'); return; }
+
+  const withCoords    = excelData.filter(d => d.geo).length;
+  const withoutCoords = excelData.filter(d => !d.geo).length;
+
+  renderExcelOrders();
+  $('excelLoaded').classList.add('show');
+  showToast(
+    `✅ ${excelData.length} адресов · 📍 ${withCoords} с координатами` +
+    (withoutCoords ? ` · ⏳ ${withoutCoords} без координат` : '')
+  );
+  geocodeExcelAll();
+}
+
+function renderExcelOrders() {
+  const container = $('excelOrders');
+  $('excelLoadedTitle').textContent = `📋 Загружено адресов: ${excelData.length}`;
+  container.innerHTML = excelData.map((item, i) => `
+    <div class="excel-order-row ${item.added?'added':item.status==='fail'?'not-found':''}" id="eo_${i}">
+      <div class="eo-num">${i+1}</div>
+      <div class="eo-info">
+        <div class="eo-addr" title="${escH(item.address)}">${escH(item.address)}</div>
+        <div class="eo-meta">
+          ${item.name  ? `<span>👤 ${escH(item.name)}</span> `  : ''}
+          ${item.sum   ? `<span>💰 ${escH(item.sum)}</span> `   : ''}
+          ${item.phone ? `<span>📞 ${escH(item.phone)}</span>`  : ''}
+        </div>
+      </div>
+      <div class="eo-status ${item.status}" id="eos_${i}">
+        ${item.status==='ok'?'✅':item.status==='fail'?'❌':'⏳'}
+      </div>
+      <button class="btn-eo-add" id="eob_${i}"
+        onclick="addExcelToRoute(${i})"
+        ${item.added?'disabled':''}>
+        ${item.added?'✓':'➕'}
+      </button>
+    </div>
+  `).join('');
+}
+
+async function geocodeExcelAll() {
+  const wrap = $('progressWrap');
+  const lbl  = $('progressLbl');
+  const fill = $('progressFill');
+  wrap.classList.add('show');
+
+  for (let i = 0; i < excelData.length; i++) {
+    const item = excelData[i];
+    if (item.geo && item.geo.lat && item.geo.lon) {
+      item.status = 'ok';
+      lbl.textContent  = `Точка ${i+1}/${excelData.length}: координаты есть ✅`;
+      fill.style.width = ((i+1)/excelData.length*100)+'%';
+      const el = $('eos_'+i);
+      if (el) { el.className='eo-status ok'; el.textContent='✅'; }
+      continue;
+    }
+    lbl.textContent  = `Геокодирование ${i+1}/${excelData.length}: ${item.address.slice(0,40)}...`;
+    fill.style.width = ((i+1)/excelData.length*100)+'%';
+    try {
+      const res = await geocode(item.address);
+      if (res && res.length) {
+        item.geo    = { lat: res[0].lat, lon: res[0].lon, display: res[0].display_name };
+        item.status = 'ok';
+      } else {
+        item.status = 'fail';
+      }
+    } catch(e) { item.status = 'fail'; }
+
+    const statusEl = $('eos_'+i);
+    const rowEl    = $('eo_'+i);
+    if (statusEl) {
+      statusEl.className   = 'eo-status ' + item.status;
+      statusEl.textContent = item.status === 'ok' ? '✅' : '❌ Не найден';
+    }
+    if (rowEl && item.status === 'fail') rowEl.classList.add('not-found');
+    await delay(700);
+  }
+
+  wrap.classList.remove('show');
+  const ok   = excelData.filter(d => d.status === 'ok').length;
+  const fail = excelData.filter(d => d.status === 'fail').length;
+  showToast(`✅ ${ok} найдено${fail ? ` · ❌ ${fail} не найдено` : ''}`);
+}
+
+function addExcelToRoute(i) {
+  const item = excelData[i];
+  if (item.added) return;
+  setTimeout(() => {
+    const allAdded = excelData.every(d => d.added);
+    if (allAdded) {
+      $('excelLoaded').classList.remove('show');
+      $('excelLoaded').style.display = 'none';
+    }
+  }, 100);
+  if (addrs.length === 2 && !addrs[1].v && !addrs[1].c) addrs.splice(1,1);
+
+  // Ищем — есть ли уже такой адрес в маршруте
+  // Сравниваем СТРОГО по тексту адреса + индексу строки Excel нет — только по точному адресу
+  const existingAddr = addrs.find(a =>
+    a._originalAddress === item.address
+  );
+
+  if (existingAddr) {
+    // Адрес уже есть — просто добавляем клиента к существующей точке
+    existingAddr._clients = existingAddr._clients || [];
+    existingAddr._clients.push({
+      name:  item.name  || '',
+      phone: item.phone || '',
+      sum:   item.sum   || ''
+    });
+    // Обновляем суммарный комментарий
+    existingAddr._excelComment = existingAddr._clients
+      .map(cl => [
+        cl.name  ? `👤 ${cl.name}`  : '',
+        cl.sum   ? `💰 ${cl.sum}`   : '',
+        cl.phone ? `📞 ${cl.phone}` : ''
+      ].filter(Boolean).join(' '))
+      .join(' | ');
+  } else {
+    // Новый адрес — создаём новую точку
+    addrs.push({
+      v: item.address,
+      c: item.geo ? { lat: item.geo.lat, lon: item.geo.lon } : null,
+      _manual: false, _excel: true,
+      _originalAddress: item.address,
+      _clients: [{
+        name:  item.name  || '',
+        phone: item.phone || '',
+        sum:   item.sum   || ''
+      }],
+      _excelComment: [
+        item.name  ? `👤 ${item.name}`  : '',
+        item.sum   ? `💰 ${item.sum}`   : '',
+        item.phone ? `📞 ${item.phone}` : ''
+      ].filter(Boolean).join(' · ')
+    });
+  }
+  item.added = true;
+  const btn = $('eob_'+i);
+  const row = $('eo_'+i);
+  if (btn) { btn.textContent='✓'; btn.disabled=true; }
+  if (row) row.classList.add('added');
+  render();
+  updateOptimizeBtn();
+  showToast(`➕ Добавлено: ${item.address.slice(0,35)}`);
+  // Если все добавлены — сворачиваем
+  if (excelData.every(d => d.added)) {
+    collapseExcelList();
+  }
+}
+
+$('excelAddAll').addEventListener('click', () => {
+  let cnt = 0;
+  excelData.forEach((_,i) => { if (!excelData[i].added) { addExcelToRoute(i); cnt++; } });
+  showToast(`✅ Добавлено ${cnt} адресов в маршрут`);
+  updateOptimizeBtn();
+  collapseExcelList();
+});
+
+$('excelClear').addEventListener('click', () => {
+  excelData = [];
+  $('excelLoaded').classList.remove('show');
+  $('excelFile').value = '';
+  showToast('🗑 Список очищен');
+});
+
+function delay(ms) { return new Promise(r => setTimeout(r,ms)); }
+function escH(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ══════════════════════════════════════
+   🗺 КАРТА
+══════════════════════════════════════ */
+let map = null, mapMarkers = [], mapLine = null;
+
+function initMap() {
+  if (map) return;
+  map = L.map('map', { zoomControl: true, scrollWheelZoom: false });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap', maxZoom: 18
+  }).addTo(map);
+}
+
+function showMap(points, routeCoords) {
+  $('mapWrap').classList.add('show');
+  initMap();
+  mapMarkers.forEach(m => m.remove());
+  mapMarkers = [];
+  if (mapLine) { mapLine.remove(); mapLine = null; }
+
+  points.forEach((p, i) => {
+    const color = i===0 ? '#10b981' : i===points.length-1 ? '#f43f5e' : '#6366f1';
+    const icon  = L.divIcon({
+      className: '',
+      html: `<div style="width:28px;height:28px;border-radius:50%;background:${color};border:3px solid #fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:#fff;box-shadow:0 3px 10px rgba(0,0,0,.5)">${i+1}</div>`,
+      iconSize:[28,28], iconAnchor:[14,14]
+    });
+    mapMarkers.push(
+      L.marker([p.lat,p.lon],{icon})
+       .bindPopup(`<b>Точка ${i+1}</b><br>${p.name||''}`)
+       .addTo(map)
+    );
+  });
+
+  if (routeCoords && routeCoords.length) {
+    mapLine = L.polyline(routeCoords,{color:'#818cf8',weight:4,opacity:.85}).addTo(map);
+    map.fitBounds(mapLine.getBounds(),{padding:[30,30]});
+  } else {
+    map.fitBounds(L.latLngBounds(points.map(p=>[p.lat,p.lon])),{padding:[30,30]});
+  }
+  setTimeout(() => map.invalidateSize(), 150);
+}
+
+function hideMap() { $('mapWrap').classList.remove('show'); }
+
+/* ══════════════════════════════════════
+   🚦 ПРОБКИ — анализ времени
+══════════════════════════════════════ */
+function analyzeTraffic(osrmHours, pointCount) {
+  // Коэффициенты пробок по времени суток
+  const now    = new Date();
+  const hour   = now.getHours();
+  const isWeekend = now.getDay() === 0 || now.getDay() === 6;
+
+  // Определяем уровень пробок
+  let trafficLevel, trafficFactor, trafficLabel, trafficColor;
+
+  if (isWeekend) {
+    trafficFactor = 1.2;
+    trafficLevel  = 'green';
+    trafficLabel  = '🟢 Слабые (выходной)';
+    trafficColor  = 'green';
+  } else if ((hour >= 7 && hour <= 10) || (hour >= 17 && hour <= 20)) {
+    trafficFactor = 2.2;
+    trafficLevel  = 'red';
+    trafficLabel  = '🔴 Сильные пробки (час-пик)';
+    trafficColor  = 'red';
+  } else if ((hour >= 11 && hour <= 13) || (hour >= 14 && hour <= 16)) {
+    trafficFactor = 1.5;
+    trafficLevel  = 'yellow';
+    trafficLabel  = '🟡 Умеренные пробки';
+    trafficColor  = 'yellow';
+  } else if (hour >= 21 || hour <= 6) {
+    trafficFactor = 1.1;
+    trafficLevel  = 'green';
+    trafficLabel  = '🟢 Свободно (ночь)';
+    trafficColor  = 'green';
+  } else {
+    trafficFactor = 1.8;
+    trafficLevel  = 'orange';
+    trafficLabel  = '🟠 Средние пробки';
+    trafficColor  = 'orange';
+  }
+
+  const cleanTime    = osrmHours;
+  const trafficTime  = osrmHours * trafficFactor;
+  const unloadTime   = (pointCount - 1) * 0.5;
+  const totalTime    = trafficTime + unloadTime;
+  const extraMinutes = Math.round((trafficTime - cleanTime) * 60);
+
+  return {
+    trafficLevel, trafficFactor, trafficLabel, trafficColor,
+    cleanTime, trafficTime, totalTime, unloadTime, extraMinutes,
+    hour, isWeekend
+  };
+}
+
+function showTrafficInfo(trafficData, totalKm) {
+  const block = $('trafficBlock');
+  const rows  = $('trafficRows');
+  const warn  = $('trafficWarn');
+
+  block.classList.add('show');
+
+  const fmtTime = h => {
+    const hrs  = Math.floor(h);
+    const mins = Math.round((h - hrs) * 60);
+    if (hrs === 0) return `${mins} мин`;
+    if (mins === 0) return `${hrs} ч`;
+    return `${hrs} ч ${mins} мин`;
+  };
+
+  rows.innerHTML = `
+    <div class="traffic-row">
+      <span>Уровень пробок сейчас</span>
+      <span class="traffic-badge ${trafficData.trafficColor}">${trafficData.trafficLabel}</span>
+    </div>
+    <div class="traffic-row">
+      <span>Без пробок (OSRM)</span>
+      <span class="traffic-badge green">${fmtTime(trafficData.cleanTime)}</span>
+    </div>
+    <div class="traffic-row">
+      <span>С пробками (×${trafficData.trafficFactor})</span>
+      <span class="traffic-badge ${trafficData.trafficColor}">${fmtTime(trafficData.trafficTime)}</span>
+    </div>
+    <div class="traffic-row">
+      <span>Время выгрузки</span>
+      <span class="traffic-badge yellow">+${fmtTime(trafficData.unloadTime)}</span>
+    </div>
+    <div class="traffic-row">
+      <span>⏱ Итого в пути</span>
+      <span class="traffic-badge ${trafficData.trafficColor}">${fmtTime(trafficData.totalTime)}</span>
+    </div>
+    <div class="traffic-row">
+      <span>📍 Расстояние</span>
+      <span class="traffic-badge green">${totalKm} км</span>
+    </div>
+  `;
+
+  // Предупреждение если пробки > 30 минут
+  if (trafficData.extraMinutes > 30) {
+    warn.classList.add('show');
+    $('trafficWarnText').innerHTML = `
+      Из-за пробок маршрут займёт на <b>${trafficData.extraMinutes} мин</b> дольше обычного.<br>
+      Рекомендуем выехать пораньше или подождать окончания часа-пик
+      ${trafficData.hour < 12 ? '(~11:00)' : '(~21:00)'}.
+    `;
+  } else {
+    warn.classList.remove('show');
+  }
+}
+
+function hideTrafficInfo() {
+  $('trafficBlock').classList.remove('show');
+  $('trafficWarn').classList.remove('show');
+}
+
+/* ══════════════════════════════════════
+   ✨ TSP ОПТИМИЗАЦИЯ МАРШРУТА
+══════════════════════════════════════ */
+
+// Расстояние между двумя точками (в км, формула гаверсинуса)
+function haversine(a, b) {
+  const R    = 6371;
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLon = (b.lon - a.lon) * Math.PI / 180;
+  const x    = Math.sin(dLat/2) * Math.sin(dLat/2) +
+               Math.cos(a.lat * Math.PI/180) * Math.cos(b.lat * Math.PI/180) *
+               Math.sin(dLon/2) * Math.sin(dLon/2);
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
+}
+
+// Nearest Neighbor эвристика — быстрый TSP
+function tspNearestNeighbor(points) {
+  const n       = points.length;
+  const visited = new Array(n).fill(false);
+  const route   = [0]; // всегда начинаем с первой точки (склад/откуда)
+  visited[0]    = true;
+
+  for (let step = 1; step < n; step++) {
+    const last    = route[route.length - 1];
+    let bestDist  = Infinity;
+    let bestIdx   = -1;
+
+    for (let j = 1; j < n; j++) { // j начинается с 1 — не трогаем стартовую точку
+      if (!visited[j]) {
+        const d = haversine(points[last].c, points[j].c);
+        if (d < bestDist) { bestDist = d; bestIdx = j; }
+      }
+    }
+
+    if (bestIdx !== -1) { route.push(bestIdx); visited[bestIdx] = true; }
+  }
+
+  return route;
+}
+
+// 2-opt улучшение маршрута
+function twoOpt(points, route) {
+  let improved = true;
+  let best     = [...route];
+
+  while (improved) {
+    improved = false;
+    for (let i = 1; i < best.length - 1; i++) {
+      for (let j = i + 1; j < best.length; j++) {
+        // Считаем текущую длину отрезков
+        const d1 = haversine(points[best[i-1]].c, points[best[i]].c) +
+                   haversine(points[best[j]].c,   points[best[(j+1) % best.length]]?.c || points[best[0]].c);
+        // Считаем длину после swap
+        const d2 = haversine(points[best[i-1]].c, points[best[j]].c) +
+                   haversine(points[best[i]].c,   points[best[(j+1) % best.length]]?.c || points[best[0]].c);
+
+        if (d2 < d1 - 0.001) {
+          // Переворачиваем отрезок i..j
+          const seg  = best.slice(i, j+1).reverse();
+          best       = [...best.slice(0,i), ...seg, ...best.slice(j+1)];
+          improved   = true;
+        }
+      }
+    }
+  }
+
+  return best;
+}
+
+// Считаем общую длину маршрута
+function routeLength(points, order) {
+  let total = 0;
+  for (let i = 0; i < order.length - 1; i++) {
+    total += haversine(points[order[i]].c, points[order[i+1]].c);
+  }
+  return total;
+}
+
+function updateOptimizeBtn() {
+  const ready = addrs.filter(a => a.c);
+  if (ready.length >= 3) {
+    $('optimizeBtn').classList.add('show');
+  } else {
+    $('optimizeBtn').classList.remove('show');
+  }
+}
+
+$('optimizeBtn').addEventListener('click', async () => {
+  const ready = addrs.filter(a => a.c);
+  if (ready.length < 3) {
+    showToast('⚠️ Нужно минимум 3 точки с координатами');
+    return;
+  }
+
+  const btn      = $('optimizeBtn');
+  btn.textContent = '⏳ Оптимизирую...';
+  btn.disabled    = true;
+
+  await delay(50); // дать UI обновиться
+
+  try {
+    // Берём только адреса с координатами
+    const withCoords = addrs.filter(a => a.c);
+
+    // Запускаем TSP
+    let order = tspNearestNeighbor(withCoords);
+    order     = twoOpt(withCoords, order);
+
+    // Считаем экономию
+    const oldOrder  = withCoords.map((_,i) => i);
+    const oldLen    = routeLength(withCoords, oldOrder);
+    const newLen    = routeLength(withCoords, order);
+    const savedKm   = (oldLen - newLen).toFixed(1);
+    const savedPct  = ((1 - newLen/oldLen) * 100).toFixed(0);
+
+    // Применяем новый порядок
+    const optimized = order.map(i => withCoords[i]);
+
+    // Восстанавливаем адреса без координат (вставляем в конец)
+    const withoutCoords = addrs.filter(a => !a.c);
+    addrs = [...optimized, ...withoutCoords];
+
+    render();
+    updateOptimizeBtn();
+
+    if (parseFloat(savedKm) > 0) {
+      showToast(`✨ Маршрут оптимизирован! Экономия: ${savedKm} км (${savedPct}%)`, 4000);
+      setInfo(`✨ Маршрут оптимизирован — сэкономлено ~${savedKm} км (${savedPct}%) · Нажмите "Рассчитать маршрут" для обновления`, 'ok');
+    } else {
+      showToast('✅ Маршрут уже оптимален!');
+      setInfo('✅ Маршрут уже оптимален — изменений нет', 'ok');
+    }
+
+  } catch(e) {
+    showToast('❌ Ошибка оптимизации: ' + e.message);
+  } finally {
+    btn.textContent = '✨ Оптимизировать маршрут (TSP)';
+    btn.disabled    = false;
+  }
+});
+
+/* ══════════════════════════════════════
+   📱 QR-КОД
+══════════════════════════════════════ */
+
+// Строим URL для Яндекс Навигатора
+function buildYandexUrl(points) {
+  if (!points || points.length < 2) return null;
+
+  // Если включён возврат — дублируем первую точку в конец
+  const allPoints = (returnEnabled && returnKm > 0)
+    ? [...points, points[0]]
+    : points;
+
+  const from = allPoints[0];
+  const to   = allPoints[allPoints.length - 1];
+  const vias = allPoints.slice(1, -1);
+
+  let url = `https://yandex.ru/maps/?rtext=${from.lat},${from.lon}`;
+  vias.forEach(p => { url += `~${p.lat},${p.lon}`; });
+  url += `~${to.lat},${to.lon}&rtt=auto`;
+
+  return url;
+}
+
+// Строим URL для Google Maps
+function buildGoogleUrl(points) {
+  if (!points || points.length < 2) return null;
+
+  // Если включён возврат — дублируем первую точку в конец
+  const allPoints = (returnEnabled && returnKm > 0)
+    ? [...points, points[0]]
+    : points;
+
+  const origin = `${allPoints[0].lat},${allPoints[0].lon}`;
+  const dest   = `${allPoints[allPoints.length-1].lat},${allPoints[allPoints.length-1].lon}`;
+  const wps    = allPoints.slice(1,-1).map(p => `${p.lat},${p.lon}`).join('|');
+
+  let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}`;
+  if (wps) url += `&waypoints=${wps}`;
+  url += `&travelmode=driving`;
+
+  return url;
+}
+
+function showQRModal(points) {
+  // Если включён возврат — добавляем первую точку в конец
+  const allPoints = (returnEnabled && returnKm > 0)
+    ? [...points, points[0]]
+    : points;
+
+  const yaUrl = buildYandexUrl(allPoints);
+  const gUrl  = buildGoogleUrl(allPoints);
+
+  if (!yaUrl) { showToast('⚠️ Нет точек для QR-кода'); return; }
+
+  const container = $('qrContainer');
+  container.innerHTML = '';
+
+  try {
+    new QRCode(container, {
+      text:         yaUrl,
+      width:        200,
+      height:       200,
+      colorDark:    '#1e1b4b',
+      colorLight:   '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M
+    });
+  } catch(e) {
+    container.innerHTML = `<div style="color:#f43f5e;font-size:12px;text-align:center">
+      ❌ Ошибка генерации QR<br><small>${e.message}</small>
+    </div>`;
+  }
+
+  $('qrYaLink').href    = yaUrl;
+  $('qrGoogleLink').href = gUrl || '#';
+
+  $('qrModal').classList.add('show');
+}
+
+$('qrBtn').addEventListener('click', () => {
+  const ready = addrs.filter(a => a.c);
+  if (ready.length < 2) {
+    showToast('⚠️ Сначала рассчитайте маршрут');
+    return;
+  }
+  const points = ready.map(a => ({ lat: a.c.lat, lon: a.c.lon, name: a.v }));
+  showQRModal(points);
+});
+
+$('yaNavBtn').addEventListener('click', () => {
+  const ready = addrs.filter(a => a.c);
+  if (ready.length < 2) { showToast('⚠️ Нет точек маршрута'); return; }
+
+  // Если включён возврат — добавляем первую точку в конец
+  let points = ready.map(a => ({ lat: a.c.lat, lon: a.c.lon }));
+  if (returnEnabled && returnKm > 0) {
+    points = [...points, points[0]];
+  }
+
+  const url = buildYandexUrl(ready.map(a => ({ lat: a.c.lat, lon: a.c.lon })));
+  if (url) window.open(url, '_blank');
+});
+
+$('qrModalClose').addEventListener('click', () => {
+  $('qrModal').classList.remove('show');
+});
+
+$('qrModal').addEventListener('click', e => {
+  if (e.target === $('qrModal')) $('qrModal').classList.remove('show');
+});
+
+/* ══════════════════════════════════════
+   🔄 ВОЗВРАТ
+══════════════════════════════════════ */
 let returnEnabled = false;
-let returnKm = 0;
+let returnKm      = 0;
 
 $('returnRow').addEventListener('click', () => {
   returnEnabled = !returnEnabled;
@@ -356,25 +1607,35 @@ $('returnRow').addEventListener('click', () => {
   calc();
 });
 
+$('simpleCalcBtn').addEventListener('click', () => {
+  const km  = nv($('km').value);
+  const hrs = nv($('hrs').value);
+  if (km === 0 && hrs === 0) {
+    showToast('⚠️ Введите километраж и время');
+    return;
+  }
+  if (returnEnabled) {
+    returnKm = km;
+    updateReturnUI();
+  }
+  calc();
+  showToast('✅ Рассчитано');
+});
+
 async function calcReturnKm() {
   const ready = addrs.filter(a => a.c);
   if (ready.length < 2) { returnKm = 0; return; }
   const reversed = [...ready].reverse();
-    try {
+  try {
     const coords = reversed.map(a => `${a.c.lon},${a.c.lat}`).join(';');
-    const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=false`;
-    const r = await fetch(url);
+    const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=false`);
     const d = await r.json();
-    if (d.code === 'Ok' && d.routes.length) {
-      returnKm = +(d.routes[0].distance / 1000).toFixed(2);
-    } else {
-      returnKm = 0;
-    }
-  } catch (e) { returnKm = 0; }
+    returnKm = d.code === 'Ok' && d.routes.length ? +(d.routes[0].distance / 1000).toFixed(2) : 0;
+  } catch(e) { returnKm = 0; }
 }
 
 function updateReturnUI() {
-  const rkEl = $('returnKm');
+  const rkEl  = $('returnKm');
   const subEl = $('returnSub');
   if (returnEnabled && returnKm > 0) {
     rkEl.textContent = `${returnKm} км`;
@@ -386,30 +1647,29 @@ function updateReturnUI() {
   }
 }
 
-/* ── Калькулятор ── */
+/* ══════════════════════════════════════
+   💰 КАЛЬКУЛЯТОР
+══════════════════════════════════════ */
 let lastVal = 0;
 function calc() {
   const t = TARIFFS[$('type').value];
   if (!t) return;
-
   const km  = nv($('km').value) + (returnEnabled ? returnKm : 0);
   const hrs = nv($('hrs').value);
-
   if (km === 0 && hrs === 0) {
     $('ramount').textContent = '—';
-    $('tags').innerHTML = '';
+    $('tags').innerHTML      = '';
+    $('breakdown').innerHTML = '';
     lastVal = 0;
     return;
   }
-
-  const addr = nv($('addr').value);
-  const pts  = nv($('pts').value);
-
+  const addr    = nv($('addr').value);
+  const pts     = nv($('pts').value);
   const routing = Math.ceil(addr / 3) * RUNIT;
   const byTime  = t.h * (hrs + pts * PC);
   const byKm    = t.k * km;
   const base    = byTime + byKm;
-  const total   = base < t.min ? t.min + routing : base + routing;
+  const total   = base < t.min ? t.min : base;
 
   const fmt = v => new Intl.NumberFormat('ru-RU').format(Math.round(v)) + ' ₽';
   const el  = $('ramount');
@@ -421,25 +1681,43 @@ function calc() {
   }
   el.textContent = fmt(total);
 
+  // Теги
   const tags = $('tags');
   tags.innerHTML = '';
-  const add = txt => {
+  const addTag = txt => {
     const tg = document.createElement('div');
-    tg.className = 'tag';
+    tg.className   = 'tag';
     tg.textContent = txt;
     tags.appendChild(tg);
   };
-  add(`🚛 ${$('type').options[$('type').selectedIndex].text}`);
-  add(`📍 ${km.toFixed(1)} км`);
-  add(`⏱ ${hrs} ч`);
-  if (addr > 0) add(`🏠 ${addr} адр.`);
-  if (pts  > 0) add(`📦 ${pts} точек`);
-  if (base < t.min) add(`⚡ минималка`);
-  if (returnEnabled && returnKm > 0) add(`🔄 возврат ${returnKm} км`);
+  addTag(`🚛 ${$('type').options[$('type').selectedIndex].text}`);
+  addTag(`📍 ${km.toFixed(1)} км`);
+  addTag(`⏱ ${hrs} ч`);
+  if (addr > 0) addTag(`🏠 ${addr} адр.`);
+  if (pts  > 0) addTag(`📦 ${pts} точек`);
+  if (base < t.min) addTag('⚡ минималка');
+  if (returnEnabled && returnKm > 0) addTag(`🔄 возврат ${returnKm} км`);
+
+  // Разбивка
+  const bd = $('breakdown');
+  bd.innerHTML = '';
+  const addRow = (label, val) => {
+    const row = document.createElement('div');
+    row.className = 'brow';
+    row.innerHTML = `<span>${label}</span><span>${val}</span>`;
+    bd.appendChild(row);
+  };
+  addRow('По времени',     fmt(byTime));
+  addRow('По километражу', fmt(byKm));
+  addRow('Адресный сбор',  fmt(routing));
+  if (base < t.min) addRow('Применена минималка', fmt(t.min));
+  addRow('💰 Итого', fmt(total));
 }
 
-/* ── Адреса ── */
-let addrs = [{ v: '', c: null }, { v: '', c: null }];
+/* ══════════════════════════════════════
+   📍 АДРЕСА — РЕНДЕР
+══════════════════════════════════════ */
+let addrs  = [{ v: '', c: null }, { v: '', c: null }];
 let timers = {};
 
 function render() {
@@ -448,56 +1726,74 @@ function render() {
 
   addrs.forEach((a, i) => {
     const card = document.createElement('div');
-    card.className = 'acard' + (a.c ? ' done' : a.v ? ' fail' : '');
+    card.className = 'acard' + (a.c ? ' done' : a.v && !a.c ? ' fail' : '');
 
     const top = document.createElement('div');
     top.className = 'atop';
 
     const num = document.createElement('div');
-    num.className = 'anum';
+    num.className   = 'anum';
     num.textContent = i + 1;
 
     const acw = document.createElement('div');
     acw.className = 'acw';
 
     const inp = document.createElement('input');
-    inp.type = 'text';
+    inp.type         = 'text';
     inp.autocomplete = 'off';
-    inp.placeholder = i === 0 ? 'Откуда (начальная точка)' : `Адрес точки ${i + 1}`;
-    inp.value = a.v;
-    if (a.c) inp.classList.add('ok');
-    else if (a.v) inp.classList.add('bad');
+    inp.placeholder  = i === 0 ? 'Откуда (начальная точка)' : `Адрес точки ${i + 1}`;
+    inp.value        = a.v;
+    if (a.c)               inp.classList.add('ok');
+    else if (a.v && !a.c)  inp.classList.add('notfound');
+
+    const nfHint = document.createElement('div');
+    nfHint.className = 'notfound-hint' + (a.v && !a.c && !a._manual ? ' show' : '');
+    nfHint.innerHTML = '⚠️ Адрес не найден — нажмите 📍 и введите координаты вручную или уточните адрес';
 
     const drop = document.createElement('div');
     drop.className = 'drop';
     let ai = -1;
 
-    function closeD() { drop.classList.remove('open'); drop.innerHTML = ''; ai = -1; }
+    function closeD() {
+      drop.classList.remove('open');
+      drop.innerHTML = '';
+      ai = -1;
+    }
 
     function pickPlace(p) {
-      a.v = p.display_name; a.c = { lat: p.lat, lon: p.lon }; a._manual = false;
-      inp.value = p.display_name; inp.className = 'ok';
-      card.className = 'acard done'; closeD();
+      a.v       = p.display_name;
+      a.c       = { lat: p.lat, lon: p.lon };
+      a._manual = false;
+      inp.value      = p.display_name;
+      inp.className  = 'ok';
+      card.className = 'acard done';
+      nfHint.classList.remove('show');
+      closeD();
       const cr = card.querySelector('.coord-row');
       if (cr) cr.classList.remove('show');
+      updateOptimizeBtn();
     }
 
     inp.addEventListener('keydown', e => {
       const its = [...drop.querySelectorAll('.di')];
       if (!its.length) return;
-      if (e.key === 'ArrowDown')      { e.preventDefault(); ai = Math.min(ai + 1, its.length - 1); }
-      else if (e.key === 'ArrowUp')   { e.preventDefault(); ai = Math.max(ai - 1, 0); }
-      else if (e.key === 'Enter' && ai >= 0) { e.preventDefault(); its[ai].dispatchEvent(new Event('mousedown')); }
-      else if (e.key === 'Escape')    closeD();
-      its.forEach((el, j) => el.classList.toggle('sel', j === ai));
+      if      (e.key === 'ArrowDown')      { e.preventDefault(); ai = Math.min(ai+1, its.length-1); }
+      else if (e.key === 'ArrowUp')        { e.preventDefault(); ai = Math.max(ai-1, 0); }
+      else if (e.key === 'Enter' && ai>=0) { e.preventDefault(); its[ai].dispatchEvent(new Event('mousedown')); }
+      else if (e.key === 'Escape')         closeD();
+      its.forEach((el,j) => el.classList.toggle('sel', j === ai));
     });
 
     inp.addEventListener('input', () => {
       a.v = inp.value; a.c = null; a._manual = false;
-      inp.className = inp.value ? 'bad' : '';
+      inp.className  = inp.value ? 'notfound' : '';
       card.className = 'acard' + (inp.value ? ' fail' : '');
-      ai = -1; clearTimeout(timers[i]);
-      drop.innerHTML = ''; drop.classList.remove('open');
+      nfHint.classList.remove('show');
+      ai = -1;
+      clearTimeout(timers[i]);
+      drop.innerHTML = '';
+      drop.classList.remove('open');
+      updateOptimizeBtn();
       if (inp.value.trim().length < 2) return;
 
       timers[i] = setTimeout(async () => {
@@ -507,21 +1803,25 @@ function render() {
           const res = await geocode(inp.value);
           drop.innerHTML = '';
           if (!res || !res.length) {
-            drop.innerHTML = '<div class="di" style="cursor:default"><b>Адрес не найден</b><small>Нажмите 📍 и введите координаты вручную</small></div>';
+            inp.className  = 'notfound';
+            card.className = 'acard notfound';
+            nfHint.classList.add('show');
+            drop.innerHTML = '<div class="di" style="cursor:default"><b>❌ Адрес не найден</b><small>Уточните адрес или нажмите 📍 для ввода координат</small></div>';
             drop.classList.add('open');
-            card.querySelector('.coord-row').classList.add('show');
+            const cr = card.querySelector('.coord-row');
+            if (cr) cr.classList.add('show');
             return;
           }
           res.forEach(p => {
             const el = document.createElement('div');
             el.className = 'di';
-            el.innerHTML = `<b>${p.short || p.display_name}</b>${p.sub ? `<small>${p.sub}</small>` : ''}`;
+            el.innerHTML = `<b>${escH(p.short || p.display_name)}</b>${p.sub ? `<small>${escH(p.sub)}</small>` : ''}`;
             el.addEventListener('mousedown', e => { e.preventDefault(); pickPlace(p); });
             drop.appendChild(el);
           });
           drop.classList.add('open');
-        } catch (err) {
-          drop.innerHTML = `<div class="di" style="cursor:default"><b>❌ Ошибка</b><small>${err.message}</small></div>`;
+        } catch(err) {
+          drop.innerHTML = `<div class="di" style="cursor:default"><b>❌ Ошибка</b><small>${escH(err.message)}</small></div>`;
           drop.classList.add('open');
         }
       }, 600);
@@ -534,8 +1834,8 @@ function render() {
     acw.appendChild(drop);
 
     const btnCt = document.createElement('button');
-    btnCt.className = 'btn-ct';
-    btnCt.title = 'Ввести координаты вручную';
+    btnCt.className   = 'btn-ct';
+    btnCt.title       = 'Ввести координаты вручную';
     btnCt.textContent = '📍';
     btnCt.addEventListener('click', () => {
       card.querySelector('.coord-row').classList.toggle('show');
@@ -555,6 +1855,9 @@ function render() {
         setInfo('');
         returnKm = 0;
         updateReturnUI();
+        hideMap();
+        hideTrafficInfo();
+        updateOptimizeBtn();
       });
       top.appendChild(rm);
     }
@@ -563,134 +1866,248 @@ function render() {
     cr.className = 'coord-row' + (a._manual ? ' show' : '');
 
     const latI = document.createElement('input');
-    latI.type = 'text';
+    latI.type        = 'text';
     latI.placeholder = 'Широта (55.9214)';
-    latI.value = a.c && a._manual ? a.c.lat : '';
+    latI.value       = a.c && a._manual ? a.c.lat : '';
 
     const lonI = document.createElement('input');
-    lonI.type = 'text';
+    lonI.type        = 'text';
     lonI.placeholder = 'Долгота (37.7951)';
-    lonI.value = a.c && a._manual ? a.c.lon : '';
+    lonI.value       = a.c && a._manual ? a.c.lon : '';
 
-    const hint = document.createElement('div');
-    hint.className = 'coord-hint';
-    hint.textContent = '💡 Координаты можно скопировать из Яндекс или Google карты';
+    const coordHint = document.createElement('div');
+    coordHint.className   = 'coord-hint';
+    coordHint.textContent = '💡 Координаты можно скопировать из Яндекс или Google карты';
 
     const applyBtn = document.createElement('button');
-    applyBtn.className = 'btn-ca';
+    applyBtn.className   = 'btn-ca';
     applyBtn.textContent = '✓ Применить';
+
     applyBtn.addEventListener('click', () => {
-      const lat = parseFloat(latI.value.replace(',', '.'));
-      const lon = parseFloat(lonI.value.replace(',', '.'));
-      if (!isFinite(lat) || !isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      let lat = parseFloat(latI.value.replace(',','.'));
+      let lon = parseFloat(lonI.value.replace(',','.'));
+
+      if (!isFinite(lat) || !isFinite(lon)) {
         latI.style.borderColor = 'rgba(248,113,113,.6)';
         lonI.style.borderColor = 'rgba(248,113,113,.6)';
+        showToast('❌ Некорректные координаты');
         return;
       }
-      a.c = { lat, lon };
+
+      // Автоисправление если lat и lon перепутаны местами
+      if (!isValidCoord(lat, lon) && isValidCoord(lon, lat)) {
+        [lat, lon] = [lon, lat];
+        showToast('⚠️ Координаты были перепутаны — исправлено автоматически');
+      }
+
+      if (!isValidCoord(lat, lon)) {
+        latI.style.borderColor = 'rgba(248,113,113,.6)';
+        lonI.style.borderColor = 'rgba(248,113,113,.6)';
+        showToast('❌ Координаты вне диапазона (не Россия?)');
+        return;
+      }
+
+      // Показываем исправленные значения
+      latI.value = lat.toFixed(6);
+      lonI.value = lon.toFixed(6);
+
+      a.c       = { lat, lon };
       a._manual = true;
       if (!a.v) a.v = `Точка (${lat.toFixed(5)}, ${lon.toFixed(5)})`;
-      inp.value = a.v;
-      inp.className = 'ok';
+      inp.value      = a.v;
+      inp.className  = 'ok';
       card.className = 'acard done';
+      nfHint.classList.remove('show');
       latI.style.borderColor = '';
       lonI.style.borderColor = '';
+      updateOptimizeBtn();
+      showToast(`✅ Координаты: ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
     });
 
     cr.appendChild(latI);
     cr.appendChild(lonI);
     cr.appendChild(applyBtn);
-    cr.appendChild(hint);
+    cr.appendChild(coordHint);
 
     card.appendChild(top);
+    if (a._excelComment) {
+      const exInfo = document.createElement('div');
+      exInfo.style.cssText = 'font-size:11px;color:rgba(165,180,252,.6);padding:2px 0 0 34px';
+      exInfo.textContent   = a._excelComment;
+      card.appendChild(exInfo);
+    }
+    card.appendChild(nfHint);
     card.appendChild(cr);
     root.appendChild(card);
   });
 }
 
-/* ── Инфо маршрута ── */
+/* ══════════════════════════════════════
+   ℹ️ ИНФО / TOAST
+══════════════════════════════════════ */
 function setInfo(msg, type = 'ok') {
   const el = $('rinfo');
   if (!msg) { el.className = 'rinfo'; el.textContent = ''; return; }
-  el.className = `rinfo show ${type}`;
+  el.className   = `rinfo show ${type}`;
   el.textContent = msg;
 }
 
-/* ── Рассчитать маршрут ── */
+function collapseExcelList() {
+  const el  = $('excelLoaded');
+  const btn = $('excelToggleBtn');
+  el.classList.add('hide');
+  btn.classList.add('show');
+  btn.textContent = `📋 Показать список (${excelData.length} адресов)`;
+}
+
+function toggleExcelList() {
+  const el  = $('excelLoaded');
+  const btn = $('excelToggleBtn');
+  const isHidden = el.classList.contains('hide');
+  if (isHidden) {
+    el.classList.remove('hide');
+    btn.textContent = `🔼 Скрыть список`;
+  } else {
+    el.classList.add('hide');
+    btn.textContent = `📋 Показать список (${excelData.length} адресов)`;
+  }
+}
+
+function showToast(msg, dur = 2500) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), dur);
+}
+
+/* ══════════════════════════════════════
+   🧮 РАССЧИТАТЬ МАРШРУТ
+══════════════════════════════════════ */
 $('routeBtn').addEventListener('click', async () => {
   const ready = addrs.filter(a => a.c);
   if (ready.length < 2) {
-    setInfo('⚠️ Нужно минимум 2 адреса с координатами', 'warn'); return;
+    setInfo('⚠️ Нужно минимум 2 адреса с координатами', 'warn');
+    return;
   }
-  const btn = $('routeBtn');
+
+  const btn    = $('routeBtn');
   btn.disabled = true;
   btn.innerHTML = '⏳ Считаю...';
   setInfo('🔍 Запрашиваю маршрут...', 'ok');
+  hideTrafficInfo();
+
   try {
     const coords = ready.map(a => `${a.c.lon},${a.c.lat}`).join(';');
-    const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=false`;
-    const r = await fetch(url);
+    const r = await fetch(
+      `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`
+    );
     const d = await r.json();
     if (d.code !== 'Ok' || !d.routes.length) throw new Error('Маршрут не найден');
-    const route = d.routes[0];
-    const km  = (route.distance / 1000).toFixed(2);
-    const hrs = (route.duration / 3600).toFixed(2);
-    $('km').value  = km;
-    $('hrs').value = hrs;
+
+    const route        = d.routes[0];
+    const km           = (route.distance / 1000).toFixed(2);
+    const osrmHrs      = route.duration / 3600;
+    const unloadCount  = ready.length - 1;
+
+    // Анализ пробок
+    const traffic  = analyzeTraffic(osrmHrs, ready.length);
+    const totalHrs = traffic.totalTime.toFixed(2);
+
+    $('km').value   = km;
+    $('hrs').value  = totalHrs;
+    $('addr').value = unloadCount;
+    $('pts').value  = unloadCount;
 
     await calcReturnKm();
     updateReturnUI();
 
-    const unloadCount = ready.length - 1;
-    $('addr').value = unloadCount;
-    $('pts').value  = unloadCount;
-    setInfo(`✅ Маршрут: ${km} км, ~${hrs} ч (${ready.length} точек)${returnEnabled && returnKm > 0 ? ` · Возврат: ${returnKm} км` : ''}`, 'ok');
+    // Показываем карту
+    const geo         = route.geometry?.coordinates || [];
+    const routeCoords = geo.map(c => [c[1], c[0]]);
+    const points      = ready.map(a => ({ lat: a.c.lat, lon: a.c.lon, name: a.v }));
+    showMap(points, routeCoords);
+
+    // Показываем блок пробок
+    showTrafficInfo(traffic, km);
+
+    const fmtTime = h => {
+      const hrs  = Math.floor(h);
+      const mins = Math.round((h - hrs) * 60);
+      return hrs > 0 ? `${hrs}ч ${mins}мин` : `${mins}мин`;
+    };
+
+    setInfo(
+      `✅ ${km} км · ${fmtTime(traffic.totalTime)} · ${traffic.trafficLabel} · ${ready.length} точек` +
+      (returnEnabled && returnKm > 0 ? ` · Возврат: ${returnKm} км` : ''),
+      'ok'
+    );
+
     calc();
-  } catch (e) {
+
+  } catch(e) {
     setInfo(`❌ Ошибка маршрута: ${e.message}`, 'err');
   } finally {
-    btn.disabled = false;
+    btn.disabled  = false;
     btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg> Рассчитать маршрут`;
   }
 });
 
-/* ── Добавить адрес ── */
+/* ══════════════════════════════════════
+   ➕ ДОБАВИТЬ АДРЕС
+══════════════════════════════════════ */
 $('addBtn').addEventListener('click', () => {
   addrs.push({ v: '', c: null });
   render();
   setInfo('');
+  updateOptimizeBtn();
 });
 
-/* ── Авторасчёт ── */
-['km', 'hrs', 'addr', 'pts', 'type'].forEach(id => {
-  $(id).addEventListener('input', calc);
-});
+/* ══════════════════════════════════════
+   ⚙️ АВТОРАСЧЁТ
+══════════════════════════════════════ */
+['km','hrs','addr','pts','type'].forEach(id => $(id).addEventListener('input', calc));
 
-/* ── Сброс ── */
+/* ══════════════════════════════════════
+   ↺ СБРОС
+══════════════════════════════════════ */
 $('resetBtn').addEventListener('click', () => {
-  addrs = [{ v: '', c: null }, { v: '', c: null }];
+  addrs         = [{ v: '', c: null }, { v: '', c: null }];
   returnEnabled = false;
-  returnKm = 0;
+  returnKm      = 0;
+  excelData     = [];
+
   $('returnChk').classList.remove('on');
   $('returnRow').classList.remove('active');
   $('returnKm').classList.remove('show');
   $('returnSub').textContent = 'Учесть километраж обратного пути';
+  $('excelLoaded').classList.remove('show');
+  $('excelFile').value = '';
+  $('optimizeBtn').classList.remove('show');
+  $('qrModal').classList.remove('show');
+
   render();
   setInfo('');
+  hideMap();
+  hideTrafficInfo();
+
   $('km').value   = 0;
   $('hrs').value  = 0;
   $('addr').value = 1;
   $('pts').value  = 1;
   $('type').value = 'h_10';
   $('ramount').textContent = '—';
-  $('tags').innerHTML = '';
+  $('tags').innerHTML      = '';
+  $('breakdown').innerHTML = '';
   lastVal = 0;
+  showToast('↺ Сброшено');
 });
 
-/* ── Копировать ── */
+/* ══════════════════════════════════════
+   📋 КОПИРОВАТЬ
+══════════════════════════════════════ */
 $('copyBtn').addEventListener('click', () => {
   const amt = $('ramount').textContent;
-  if (amt === '—') return;
+  if (amt === '—') { showToast('⚠️ Сначала рассчитайте маршрут'); return; }
   const lines = [
     '=== Калькулятор тарифа за рейс ===',
     `Итого: ${amt}`,
@@ -699,22 +2116,330 @@ $('copyBtn').addEventListener('click', () => {
     `Время: ${$('hrs').value} ч`,
     `Адресов выгрузки: ${$('addr').value}`,
     `Точек выгрузки: ${$('pts').value}`,
-    returnEnabled && returnKm > 0 ? `Возврат на начальный адрес: ${returnKm} км` : null,
+    returnEnabled && returnKm > 0 ? `Возврат: ${returnKm} км` : null,
     '',
     'Маршрут:',
-    ...addrs.filter(a => a.v).map((a, i) => `  ${i + 1}. ${a.v}`)
+    ...addrs.filter(a => a.v).map((a, i) => `  ${i+1}. ${a.v}`)
   ].filter(v => v !== null).join('\n');
-  navigator.clipboard.writeText(lines).then(() => {
-    const t = $('toast');
-    t.classList.add('show');
-    setTimeout(() => t.classList.remove('show'), 2200);
-  });
+  navigator.clipboard.writeText(lines).then(() => showToast('✅ Скопировано'));
 });
 
-/* ── Старт ── */
+/* ══════════════════════════════════════
+   🖨️ ПЕЧАТЬ PDF
+══════════════════════════════════════ */
+$('printBtn').addEventListener('click', () => {
+  const amt      = $('ramount').textContent;
+  const hasRoute = addrs.some(a => a.v);
+  const hasExcel = excelData.length > 0;
+
+  if (amt === '—' && !hasRoute && !hasExcel) {
+    showToast('⚠️ Нечего печатать — добавьте адреса или загрузите Excel');
+    return;
+  }
+
+  const fmt = v => new Intl.NumberFormat('ru-RU').format(Math.round(v)) + ' ₽';
+  const t   = TARIFFS[$('type').value];
+  const km  = nv($('km').value) + (returnEnabled ? returnKm : 0);
+  const hrs = nv($('hrs').value);
+  const addr    = nv($('addr').value);
+  const pts     = nv($('pts').value);
+  const routing = Math.ceil(addr / 3) * RUNIT;
+  const byTime  = t.h * (hrs + pts * PC);
+  const byKm    = t.k * km;
+  const base    = byTime + byKm;
+  const total   = base < t.min ? t.min : base;
+  const hasCalc = amt !== '—';
+
+  const now = new Date();
+  $('pdf-date-val').textContent = now.toLocaleDateString('ru-RU', {
+    day: '2-digit', month: 'long', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  });
+
+  $('pdf-amount').textContent = hasCalc ? fmt(total) : '— не рассчитано —';
+
+  // PDF теги
+  const pdfTags = $('pdf-tags');
+  pdfTags.innerHTML = '';
+  const addPdfTag = txt => {
+    const tg = document.createElement('div');
+    tg.className   = 'pdf-tag';
+    tg.textContent = txt;
+    pdfTags.appendChild(tg);
+  };
+  addPdfTag(`🚛 ${$('type').options[$('type').selectedIndex].text}`);
+  addPdfTag(`📍 ${km.toFixed(1)} км`);
+  addPdfTag(`⏱ ${hrs} ч`);
+  if (addr > 0) addPdfTag(`🏠 ${addr} адр.`);
+  if (pts  > 0) addPdfTag(`📦 ${pts} точек`);
+  if (base < t.min) addPdfTag('⚡ минималка');
+  if (returnEnabled && returnKm > 0) addPdfTag(`🔄 возврат ${returnKm} км`);
+
+  // Параметры
+  const pdfParams = $('pdf-params');
+  pdfParams.innerHTML = '';
+  const addParam = (label, val) => {
+    const row = document.createElement('div');
+    row.className = 'pdf-row';
+    row.innerHTML = `<span>${label}</span><span>${val}</span>`;
+    pdfParams.appendChild(row);
+  };
+  addParam('Тип ТС',           $('type').options[$('type').selectedIndex].text);
+  addParam('Километраж',       `${km.toFixed(1)} км`);
+  addParam('Время в пути',     `${hrs} ч`);
+  addParam('Адресов выгрузки', addr);
+  addParam('Точек выгрузки',   pts);
+  if (returnEnabled && returnKm > 0) addParam('Возврат', `${returnKm} км`);
+
+  // Разбивка
+  const pdfBd = $('pdf-breakdown');
+  pdfBd.innerHTML = '';
+  const addBdRow = (label, val, isTotal = false) => {
+    const row = document.createElement('div');
+    row.className = 'pdf-row' + (isTotal ? ' total-row' : '');
+    row.innerHTML = `<span>${label}</span><span>${val}</span>`;
+    pdfBd.appendChild(row);
+  };
+  addBdRow('По времени',     fmt(byTime));
+  addBdRow('По километражу', fmt(byKm));
+  addBdRow('Адресный сбор',  fmt(routing));
+  if (base < t.min) addBdRow('Минималка', fmt(t.min));
+  addBdRow('💰 Итого', fmt(total), true);
+
+  // Маршрут
+   const pdfRoute     = $('pdf-route');
+  pdfRoute.innerHTML = '';
+  const routeAddrs   = addrs.filter(a => a.v);
+  const excelUnadded = excelData.filter(d => d.status === 'ok' || d.added);
+
+  // Собираем все точки
+  // Группируем excelData по адресу — один адрес = список клиентов
+  const addrClientMap = new Map();
+  excelData.forEach(d => {
+    const key = d.address;
+    if (!addrClientMap.has(key)) addrClientMap.set(key, []);
+    addrClientMap.get(key).push({
+      name:  d.name  || '',
+      phone: d.phone || '',
+      sum:   d.sum   || ''
+    });
+  });
+
+  const allRouteItems = [];
+  if (routeAddrs.length > 0) {
+    routeAddrs.forEach((a, i) => {
+      const origAddr = a._originalAddress || a.v;
+      // Берём клиентов напрямую из объекта адреса (уже сгруппированы правильно)
+      const clients  = a._clients && a._clients.length > 0
+        ? a._clients
+        : addrClientMap.get(origAddr) || [];
+      allRouteItems.push({
+        num:     i,
+        addr:    origAddr,
+        clients: clients,
+        type:    i === 0 ? 'start' : i === routeAddrs.length - 1 ? 'end' : 'middle'
+      });
+    });
+  } else {
+    excelUnadded.forEach((d, i) => {
+      const clients = addrClientMap.get(d.address) || [{
+        name:  d.name  || '',
+        phone: d.phone || '',
+        sum:   d.sum   || ''
+      }];
+      allRouteItems.push({
+        num:     i,
+        addr:    d.address,
+        clients: clients,
+        type:    'middle'
+      });
+    });
+  }
+
+  if (returnEnabled && returnKm > 0 && allRouteItems.length > 0) {
+    allRouteItems.push({
+      num: allRouteItems.length,
+      addr: (routeAddrs[0]?._originalAddress || routeAddrs[0]?.v || '') + ` · возврат ${returnKm} км`,
+      comment: '🔄 Возврат на склад',
+      type: 'start'
+    });
+  }
+
+  // Считаем итоговую сумму — берём напрямую из excelData
+  let totalSum = 0;
+  excelData.forEach(d => {
+    const n = parseFloat(String(d.sum || '').replace(',', '.').replace(/\s/g, ''));
+    if (isFinite(n) && n > 0) totalSum += n;
+  });
+
+  // Строим таблицу
+  const table = document.createElement('table');
+  table.className = 'pdf-driver-table';
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th style="width:36px">#</th>
+        <th>Адрес доставки</th>
+        <th style="width:120px">Клиент / Тел</th>
+        <th style="width:90px">Сумма</th>
+        <th style="width:36px">✓</th>
+      </tr>
+    </thead>
+    <tbody id="pdf-driver-tbody"></tbody>
+  `;
+
+  const tbody = table.querySelector('#pdf-driver-tbody');
+
+  allRouteItems.forEach((item, idx) => {
+    const dotColor = item.type === 'start' ? '#10b981' : item.type === 'end' ? '#f43f5e' : '#6366f1';
+    const clients  = item.clients && item.clients.length > 0
+      ? item.clients
+      : [{ name: '', phone: '', sum: '' }];
+
+    // Считаем итого по адресу
+    let addrTotal = 0;
+    clients.forEach(cl => {
+      const n = parseFloat(String(cl.sum || '').replace(',', '.'));
+      if (isFinite(n)) addrTotal += n;
+    });
+    const addrTotalFmt = addrTotal > 0
+      ? new Intl.NumberFormat('ru-RU').format(Math.round(addrTotal)) + ' ₽'
+      : '';
+
+    clients.forEach((cl, ci) => {
+      const tr = document.createElement('tr');
+
+      const sumNum = parseFloat(String(cl.sum || '').replace(',', '.'));
+      const sumFmt = isFinite(sumNum) && sumNum > 0
+        ? new Intl.NumberFormat('ru-RU').format(Math.round(sumNum)) + ' ₽'
+        : (cl.sum ? cl.sum + ' ₽' : '—');
+
+      // Первая строка адреса — показываем номер и адрес
+      // Последующие строки — только клиент
+      if (ci === 0) {
+        tr.innerHTML = `
+          <td style="text-align:center;padding:8px 6px;vertical-align:top" rowspan="${clients.length}">
+            <div style="width:28px;height:28px;border-radius:50%;background:${dotColor};color:#fff;font-size:11px;font-weight:900;display:inline-flex;align-items:center;justify-content:center">${idx+1}</div>
+          </td>
+          <td style="padding:8px 10px;vertical-align:top" rowspan="${clients.length}">
+            <b style="font-size:12px;color:#1e1b4b">${escH(item.addr)}</b>
+            ${clients.length > 1
+              ? `<div style="font-size:10px;color:#6366f1;margin-top:3px;font-weight:700">${clients.length} получателя</div>`
+              : ''}
+          </td>
+          <td style="padding:8px 10px;border-left:2px solid #e5e7eb">
+            ${cl.name  ? `<div style="font-size:11px;font-weight:700;color:#374151">${escH(cl.name)}</div>`  : ''}
+            ${cl.phone ? `<div style="font-size:11px;color:#6366f1;margin-top:2px">${escH(cl.phone)}</div>` : ''}
+          </td>
+          <td style="padding:8px 10px;font-weight:800;color:#1e1b4b;font-size:13px;white-space:nowrap">
+            ${sumFmt}
+          </td>
+          <td style="text-align:center;padding:8px 6px" rowspan="${clients.length}">
+            <div style="width:22px;height:22px;border:2px solid #d1d5db;border-radius:5px;display:inline-block"></div>
+          </td>
+        `;
+      } else {
+        // Дополнительные клиенты — только имя/телефон/сумма
+        tr.innerHTML = `
+          <td style="padding:6px 10px;border-left:2px solid #e5e7eb;border-top:1px dashed #e5e7eb">
+            ${cl.name  ? `<div style="font-size:11px;font-weight:700;color:#374151">${escH(cl.name)}</div>`  : ''}
+            ${cl.phone ? `<div style="font-size:11px;color:#6366f1;margin-top:2px">${escH(cl.phone)}</div>` : ''}
+          </td>
+          <td style="padding:6px 10px;font-weight:800;color:#1e1b4b;font-size:13px;white-space:nowrap;border-top:1px dashed #e5e7eb">
+            ${sumFmt}
+          </td>
+        `;
+      }
+      tbody.appendChild(tr);
+    });
+
+    // Итого по адресу если несколько клиентов
+    if (clients.length > 1 && addrTotal > 0) {
+      const trSum = document.createElement('tr');
+      trSum.innerHTML = `
+        <td colspan="2" style="padding:4px 10px;text-align:right;font-size:11px;color:#6b7280;border-top:1px solid #e5e7eb;background:#f8f7ff">
+          Итого по адресу:
+        </td>
+        <td style="padding:4px 10px;font-weight:900;color:#6366f1;font-size:12px;border-top:1px solid #e5e7eb;background:#f8f7ff;white-space:nowrap">
+          ${addrTotalFmt}
+        </td>
+        <td style="border-top:1px solid #e5e7eb;background:#f8f7ff"></td>
+      `;
+      tbody.appendChild(trSum);
+    }
+  });  
+
+  // Строка итого
+  if (totalSum > 0) {
+    const trTotal = document.createElement('tr');
+    trTotal.innerHTML = `
+      <td colspan="3" style="text-align:right;font-weight:800;font-size:13px;color:#1e1b4b;border-top:2px solid #6366f1;padding-top:10px">
+        💰 Итого к получению:
+      </td>
+      <td colspan="2" style="font-weight:900;font-size:15px;color:#6366f1;border-top:2px solid #6366f1;padding-top:10px">
+        ${new Intl.NumberFormat('ru-RU').format(Math.round(totalSum))} ₽
+      </td>
+    `;
+    tbody.appendChild(trTotal);
+  }
+
+  pdfRoute.appendChild(table);
+
+  if (routeAddrs.length === 0 && excelUnadded.length > 0) {
+    excelUnadded.forEach((d, i) => {
+      const item = document.createElement('div');
+      item.className = 'pdf-route-item';
+      item.innerHTML = `
+        <div class="pdf-dot middle">${i+1}</div>
+        <div>
+          <div class="pdf-addr-label">📦 Заказ</div>
+          <div class="pdf-addr-text">${escH(d.address)}</div>
+          <div style="font-size:10px;color:#9ca3af;margin-top:3px">
+            ${d.name  ? `👤 ${escH(d.name)} &nbsp;`  : ''}
+            ${d.sum   ? `💰 ${escH(d.sum)} &nbsp;`   : ''}
+            ${d.phone ? `📞 ${escH(d.phone)}`        : ''}
+          </div>
+        </div>
+      `;
+      pdfRoute.appendChild(item);
+    });
+  }
+
+  if (returnEnabled && returnKm > 0 && routeAddrs.length > 0) {
+    const item = document.createElement('div');
+    item.className = 'pdf-route-item';
+    item.innerHTML = `
+      <div class="pdf-dot start">↩</div>
+      <div>
+        <div class="pdf-addr-label">🔄 Возврат</div>
+        <div class="pdf-addr-text">${escH(routeAddrs[0].v)} · ${returnKm} км</div>
+      </div>
+    `;
+    pdfRoute.appendChild(item);
+  }
+
+  window.print();
+});
+
+/* ══════════════════════════════════════
+   🏭 СКЛАД МЫТИЩИ
+══════════════════════════════════════ */
+function fillWarehouse() {
+  addrs[0] = {
+    v: 'Склад Мытищи (55.930670, 37.760800)',
+    c: { lat: 55.930670, lon: 37.760800 },
+    _manual: true
+  };
+  render();
+  updateOptimizeBtn();
+  showToast('🏭 Склад Мытищи установлен как точка отправления');
+}
+
+/* ══════════════════════════════════════
+   🚀 СТАРТ
+══════════════════════════════════════ */
 render();
 calc();
 </script>
 </body>
 </html>
-  
