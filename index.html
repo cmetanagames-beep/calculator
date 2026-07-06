@@ -673,9 +673,6 @@ $('km').value  = km;
 $('hrs').value = hrs;
 
 // Автозаполнение: первый адрес — отправка, остальные — выгрузка
-const unloadCount = ready.length - 1;
-$('addr').value = unloadCount;
-$('pts').value  = unloadCount;
 
 await calcReturnKm();
 updateReturnUI();
