@@ -2007,7 +2007,21 @@ $('routeBtn').addEventListener('click', async () => {
     const route        = d.routes[0];
     const km           = (route.distance / 1000).toFixed(2);
     const osrmHrs      = route.duration / 3600;
-    const unloadCount  = ready.length - 1;
+
+    // Считаем уникальные физические точки доставки (не считая точку отправления)
+    // Группируем по координатам с точностью до 3 знаков
+    const deliveryPoints = ready.slice(1); // убираем точку отправления
+    const uniqueCoords = new Set(
+      deliveryPoints.map(a => `${a.c.lat.toFixed(3)},${a.c.lon.toFixed(3)}`)
+    );
+    const uniqueAddrs  = new Set(
+      deliveryPoints.map(a => (a._originalAddress || a.v).trim().toLowerCase())
+    );
+
+    // Физических точек = уникальные координаты
+    const physicalPoints = uniqueCoords.size;
+    // Адресов выгрузки = уникальные адреса
+    const addressCount   = uniqueAddrs.size;
 
     // Анализ пробок
     const traffic  = analyzeTraffic(osrmHrs, ready.length);
@@ -2015,8 +2029,8 @@ $('routeBtn').addEventListener('click', async () => {
 
     $('km').value   = km;
     $('hrs').value  = totalHrs;
-    $('addr').value = unloadCount;
-    $('pts').value  = unloadCount;
+    $('addr').value = addressCount;   // уникальных адресов
+    $('pts').value  = physicalPoints; // физических точек на карте
 
     await calcReturnKm();
     updateReturnUI();
