@@ -1714,12 +1714,16 @@ function calc() {
     tags.appendChild(tg);
   };
   addTag(`🚛 ${$('type').options[$('type').selectedIndex].text}`);
+  if (returnEnabled && returnKm > 0) {
+  const oneWay = nv($('km').value);
+  addTag(`📍 ${km.toFixed(1)} км (${oneWay.toFixed(1)} + ${returnKm} возврат)`);
+} else {
   addTag(`📍 ${km.toFixed(1)} км`);
+}
   addTag(`⏱ ${hrs} ч`);
   if (addr > 0) addTag(`🏠 ${addr} адр.`);
   if (pts  > 0) addTag(`📦 ${pts} точек`);
   if (base < t.min) addTag('⚡ минималка');
-  if (returnEnabled && returnKm > 0) addTag(`🔄 возврат ${returnKm} км`);
 
   // Разбивка
   const bd = $('breakdown');
