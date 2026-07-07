@@ -2039,16 +2039,17 @@ $('routeBtn').addEventListener('click', async () => {
       deliveryPoints.map(a => `${a.c.lat.toFixed(2)},${a.c.lon.toFixed(2)}`)
     );
 
-    // Уникальные клиенты/точки (по точным координатам + названию клиента)
-    const uniqueClients = new Set(
-      deliveryPoints.map(a => {
-        // client — колонка из colMap.client
-        const name = (a.client || a._client || a.v || '').trim().toLowerCase();
-        const coord = `${a.c.lat.toFixed(5)},${a.c.lon.toFixed(5)}`;
-        return `${name}|${coord}`;
-      })
-    );
-
+    // Считаем уникальных клиентов через _clients массив
+    let clientSet = new Set();
+    deliveryPoints.forEach(a => {
+      if (a._clients && Array.isArray(a._clients)) {
+        a._clients.forEach(cl => {
+          const name = (cl.name || '').trim().toLowerCase();
+          if (name) clientSet.add(name);
+        });
+      }
+    });
+    const uniqueClients = clientSet;
     const addressCount   = uniqueCoords.size;   // 4 адреса
     const physicalPoints = uniqueClients.size;  // 5 клиентов
 
