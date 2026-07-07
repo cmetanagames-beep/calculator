@@ -1491,10 +1491,23 @@ $('optimizeBtn').addEventListener('click', async () => {
 function buildYandexUrl(points) {
   if (!points || points.length < 2) return null;
 
-  // Если включён возврат — дублируем первую точку в конец
+  // Дедупликация по координатам (убираем точки с одинаковыми lat/lon)
+  const seen  = new Set();
+  const dedup = [];
+  for (const p of points) {
+    const key = `${p.lat.toFixed(5)},${p.lon.toFixed(5)}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      dedup.push(p);
+    }
+  }
+
+  // Если включён возврат — добавляем первую точку в конец
   const allPoints = (returnEnabled && returnKm > 0)
-    ? [...points, points[0]]
-    : points;
+    ? [...dedup, dedup[0]]
+    : dedup;
+
+  if (allPoints.length < 2) return null;
 
   const from = allPoints[0];
   const to   = allPoints[allPoints.length - 1];
@@ -1511,10 +1524,20 @@ function buildYandexUrl(points) {
 function buildGoogleUrl(points) {
   if (!points || points.length < 2) return null;
 
-  // Если включён возврат — дублируем первую точку в конец
+  // Дедупликация по координатам
+  const seen  = new Set();
+  const dedup = [];
+  for (const p of points) {
+    const key = `${p.lat.toFixed(5)},${p.lon.toFixed(5)}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      dedup.push(p);
+    }
+  }
+
   const allPoints = (returnEnabled && returnKm > 0)
-    ? [...points, points[0]]
-    : points;
+    ? [...dedup, dedup[0]]
+    : dedup;
 
   const origin = `${allPoints[0].lat},${allPoints[0].lon}`;
   const dest   = `${allPoints[allPoints.length-1].lat},${allPoints[allPoints.length-1].lon}`;
