@@ -2032,19 +2032,25 @@ $('routeBtn').addEventListener('click', async () => {
     const osrmHrs      = route.duration / 3600;
 
     // Считаем уникальные физические точки доставки (не считая точку отправления)
-    // Группируем по координатам с точностью до 3 знаков
-    const deliveryPoints = ready.slice(1); // убираем точку отправления
+    const deliveryPoints = ready.slice(1);
+
+    // Физических точек = уникальные координаты (с точностью до 2 знаков)
     const uniqueCoords = new Set(
-      deliveryPoints.map(a => `${a.c.lat.toFixed(3)},${a.c.lon.toFixed(3)}`)
-    );
-    const uniqueAddrs  = new Set(
-      deliveryPoints.map(a => (a._originalAddress || a.v).trim().toLowerCase())
+      deliveryPoints.map(a => `${a.c.lat.toFixed(2)},${a.c.lon.toFixed(2)}`)
     );
 
-    // Физических точек = уникальные координаты
-    const physicalPoints = uniqueCoords.size;
-    // Адресов выгрузки = уникальные адреса
-    const addressCount   = uniqueAddrs.size;
+    // Уникальные клиенты/точки (по точным координатам + названию клиента)
+    const uniqueClients = new Set(
+      deliveryPoints.map(a => {
+        // client — колонка из colMap.client
+        const name = (a.client || a._client || a.v || '').trim().toLowerCase();
+        const coord = `${a.c.lat.toFixed(5)},${a.c.lon.toFixed(5)}`;
+        return `${name}|${coord}`;
+      })
+    );
+
+    const addressCount   = uniqueCoords.size;   // 4 адреса
+    const physicalPoints = uniqueClients.size;  // 5 клиентов
 
     // Анализ пробок
     const traffic  = analyzeTraffic(osrmHrs, ready.length);
@@ -2052,8 +2058,8 @@ $('routeBtn').addEventListener('click', async () => {
 
     $('km').value   = km;
     $('hrs').value  = totalHrs;
-    $('addr').value = addressCount;   // уникальных адресов
-    $('pts').value  = physicalPoints; // физических точек на карте
+    $('addr').value = addressCount;
+    $('pts').value  = physicalPoints;
 
     await calcReturnKm();
     updateReturnUI();
