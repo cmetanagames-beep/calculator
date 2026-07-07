@@ -119,9 +119,6 @@ input::placeholder{color:rgba(255,255,255,.28)}
 .btn-go{flex:1;padding:10px 14px;border-radius:13px;font-size:13px;font-weight:700;cursor:pointer;border:none;background:linear-gradient(135deg,#059669,#10b981);color:#fff;transition:.18s;outline:none;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px;box-shadow:0 4px 14px rgba(16,185,129,.3)}
 .btn-go:hover:not(:disabled){box-shadow:0 6px 22px rgba(16,185,129,.45);transform:translateY(-1px)}
 .btn-go:disabled{opacity:.5;cursor:not-allowed}
-.btn-optimize{width:100%;padding:10px 16px;border-radius:13px;font-size:13px;font-weight:700;cursor:pointer;border:none;background:linear-gradient(135deg,#d97706,#f59e0b);color:#fff;outline:none;font-family:inherit;transition:.18s;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 4px 14px rgba(245,158,11,.3);display:none}
-.btn-optimize.show{display:flex}
-.btn-optimize:hover{box-shadow:0 6px 22px rgba(245,158,11,.45);transform:translateY(-1px)}
 .rinfo{border-radius:13px;padding:10px 14px;font-size:12px;font-weight:600;text-align:center;display:none;line-height:1.5}
 .rinfo.show{display:block}
 .rinfo.ok{background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);color:rgba(52,211,153,.9)}
@@ -379,11 +376,6 @@ input::placeholder{color:rgba(255,255,255,.28)}
 
 <div class="rlist full-only" id="rlist"></div>
 
-<!-- Кнопка оптимизации -->
-<button class="btn-optimize full-only" id="optimizeBtn">
-      ✨ Оптимизировать маршрут (TSP)
-    </button>
-
 <div class="return-row" id="returnRow">
   <div class="chk" id="returnChk">
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -537,6 +529,15 @@ input::placeholder{color:rgba(255,255,255,.28)}
         Маршрут следования
       </div>
       <div class="pdf-route-list" id="pdf-route"></div>
+    </div>
+    <!-- QR для PDF -->
+    <div id="pdf-qr-block" style="display:none;background:#f8f7ff;border:1.5px solid #e0e0f0;border-radius:14px;padding:16px 20px;margin-bottom:16px;flex-direction:row;align-items:center;gap:20px">
+      <div id="pdf-qr-img" style="flex-shrink:0;background:#fff;padding:8px;border-radius:10px;border:1px solid #e0e0f0;width:120px;height:120px"></div>
+      <div>
+        <div style="font-size:13px;font-weight:800;color:#1e1b4b;margin-bottom:6px">📱 QR-код маршрута для водителя</div>
+        <div style="font-size:11px;color:#6b7280;line-height:1.6;margin-bottom:6px">Отсканируйте телефоном — откроется в <b>Яндекс Навигаторе</b></div>
+        <div id="pdf-qr-url" style="font-size:9px;color:#9ca3af;word-break:break-all"></div>
+      </div>
     </div>
     <div class="pdf-sign-block">
       <div class="pdf-sign-item">
@@ -1155,7 +1156,6 @@ function addExcelToRoute(i) {
   if (btn) { btn.textContent='✓'; btn.disabled=true; }
   if (row) row.classList.add('added');
   render();
-  updateOptimizeBtn();
   showToast(`➕ Добавлено: ${item.address.slice(0,35)}`);
   // Если все добавлены — сворачиваем
   if (excelData.every(d => d.added)) {
@@ -1167,7 +1167,6 @@ $('excelAddAll').addEventListener('click', () => {
   let cnt = 0;
   excelData.forEach((_,i) => { if (!excelData[i].added) { addExcelToRoute(i); cnt++; } });
   showToast(`✅ Добавлено ${cnt} адресов в маршрут`);
-  updateOptimizeBtn();
   collapseExcelList();
 });
 
@@ -1220,11 +1219,19 @@ function showMap(points, routeCoords) {
   });
 
   if (routeCoords && routeCoords.length) {
-    mapLine = L.polyline(routeCoords,{color:'#818cf8',weight:4,opacity:.85}).addTo(map);
-    map.fitBounds(mapLine.getBounds(),{padding:[30,30]});
+    mapLine = L.polyline(routeCoords, {
+      color: '#818cf8',
+      weight: 4,
+      opacity: .85
+    }).addTo(map);
+    map.fitBounds(mapLine.getBounds(), {padding:[30,30]});
   } else {
-    map.fitBounds(L.latLngBounds(points.map(p=>[p.lat,p.lon])),{padding:[30,30]});
+    map.fitBounds(
+      L.latLngBounds(points.map(p=>[p.lat,p.lon])),
+      {padding:[30,30]}
+    );
   }
+
   setTimeout(() => map.invalidateSize(), 150);
 }
 
@@ -1420,68 +1427,6 @@ function routeLength(points, order) {
   return total;
 }
 
-function updateOptimizeBtn() {
-  const ready = addrs.filter(a => a.c);
-  if (ready.length >= 3) {
-    $('optimizeBtn').classList.add('show');
-  } else {
-    $('optimizeBtn').classList.remove('show');
-  }
-}
-
-$('optimizeBtn').addEventListener('click', async () => {
-  const ready = addrs.filter(a => a.c);
-  if (ready.length < 3) {
-    showToast('⚠️ Нужно минимум 3 точки с координатами');
-    return;
-  }
-
-  const btn      = $('optimizeBtn');
-  btn.textContent = '⏳ Оптимизирую...';
-  btn.disabled    = true;
-
-  await delay(50); // дать UI обновиться
-
-  try {
-    // Берём только адреса с координатами
-    const withCoords = addrs.filter(a => a.c);
-
-    // Запускаем TSP
-    let order = tspNearestNeighbor(withCoords);
-    order     = twoOpt(withCoords, order);
-
-    // Считаем экономию
-    const oldOrder  = withCoords.map((_,i) => i);
-    const oldLen    = routeLength(withCoords, oldOrder);
-    const newLen    = routeLength(withCoords, order);
-    const savedKm   = (oldLen - newLen).toFixed(1);
-    const savedPct  = ((1 - newLen/oldLen) * 100).toFixed(0);
-
-    // Применяем новый порядок
-    const optimized = order.map(i => withCoords[i]);
-
-    // Восстанавливаем адреса без координат (вставляем в конец)
-    const withoutCoords = addrs.filter(a => !a.c);
-    addrs = [...optimized, ...withoutCoords];
-
-    render();
-    updateOptimizeBtn();
-
-    if (parseFloat(savedKm) > 0) {
-      showToast(`✨ Маршрут оптимизирован! Экономия: ${savedKm} км (${savedPct}%)`, 4000);
-      setInfo(`✨ Маршрут оптимизирован — сэкономлено ~${savedKm} км (${savedPct}%) · Нажмите "Рассчитать маршрут" для обновления`, 'ok');
-    } else {
-      showToast('✅ Маршрут уже оптимален!');
-      setInfo('✅ Маршрут уже оптимален — изменений нет', 'ok');
-    }
-
-  } catch(e) {
-    showToast('❌ Ошибка оптимизации: ' + e.message);
-  } finally {
-    btn.textContent = '✨ Оптимизировать маршрут (TSP)';
-    btn.disabled    = false;
-  }
-});
 
 /* ══════════════════════════════════════
    📱 QR-КОД
@@ -1798,7 +1743,6 @@ function render() {
       closeD();
       const cr = card.querySelector('.coord-row');
       if (cr) cr.classList.remove('show');
-      updateOptimizeBtn();
     }
 
     inp.addEventListener('keydown', e => {
@@ -1820,7 +1764,6 @@ function render() {
       clearTimeout(timers[i]);
       drop.innerHTML = '';
       drop.classList.remove('open');
-      updateOptimizeBtn();
       if (inp.value.trim().length < 2) return;
 
       timers[i] = setTimeout(async () => {
@@ -1884,7 +1827,6 @@ function render() {
         updateReturnUI();
         hideMap();
         hideTrafficInfo();
-        updateOptimizeBtn();
       });
       top.appendChild(rm);
     }
@@ -1947,7 +1889,6 @@ function render() {
       nfHint.classList.remove('show');
       latI.style.borderColor = '';
       lonI.style.borderColor = '';
-      updateOptimizeBtn();
       showToast(`✅ Координаты: ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
     });
 
@@ -2011,10 +1952,46 @@ function showToast(msg, dur = 2500) {
    🧮 РАССЧИТАТЬ МАРШРУТ
 ══════════════════════════════════════ */
 $('routeBtn').addEventListener('click', async () => {
-  const ready = addrs.filter(a => a.c);
+  let ready = addrs.filter(a => a.c);
   if (ready.length < 2) {
     setInfo('⚠️ Нужно минимум 2 адреса с координатами', 'warn');
     return;
+  }
+
+  // Автооптимизация если 3+ точек
+  if (ready.length >= 3) {
+    const start = ready[0];             // первая точка фиксирована
+    const rest  = ready.slice(1);       // остальные оптимизируем
+
+    // Nearest Neighbor от стартовой точки
+    const visited = new Array(rest.length).fill(false);
+    const optimized = [];
+    let current = start;
+
+    for (let step = 0; step < rest.length; step++) {
+      let bestDist = Infinity;
+      let bestIdx  = -1;
+      rest.forEach((p, j) => {
+        if (!visited[j]) {
+          const d = haversine(current.c, p.c);
+          if (d < bestDist) { bestDist = d; bestIdx = j; }
+        }
+      });
+      if (bestIdx !== -1) {
+        optimized.push(rest[bestIdx]);
+        visited[bestIdx] = true;
+        current = rest[bestIdx];
+      }
+    }
+
+    ready = [start, ...optimized];
+
+    // Применяем новый порядок в addrs
+    const withoutCoords = addrs.filter(a => !a.c);
+    addrs = [...ready, ...withoutCoords];
+    render();
+    setInfo('✨ Маршрут автоматически оптимизирован', 'ok');
+    await delay(100);
   }
 
   const btn    = $('routeBtn');
@@ -2107,7 +2084,6 @@ $('addBtn').addEventListener('click', () => {
   addrs.push({ v: '', c: null });
   render();
   setInfo('');
-  updateOptimizeBtn();
 });
 
 /* ══════════════════════════════════════
@@ -2130,7 +2106,6 @@ $('resetBtn').addEventListener('click', () => {
   $('returnSub').textContent = 'Учесть километраж обратного пути';
   $('excelLoaded').classList.remove('show');
   $('excelFile').value = '';
-  $('optimizeBtn').classList.remove('show');
   $('qrModal').classList.remove('show');
 
   render();
@@ -2465,7 +2440,27 @@ $('printBtn').addEventListener('click', () => {
     `;
     pdfRoute.appendChild(item);
   }
+  // Генерируем QR в PDF
+  const readyForQR = addrs.filter(a => a.c);
+  const pdfQrBlock = $('pdf-qr-block');
+  const pdfQrImg   = $('pdf-qr-img');
+  pdfQrImg.innerHTML = '';
+  pdfQrBlock.style.display = 'none';
 
+  if (readyForQR.length >= 2) {
+    const yaUrl = buildYandexUrl(readyForQR.map(a => ({ lat: a.c.lat, lon: a.c.lon })));
+    if (yaUrl) {
+      try {
+        new QRCode(pdfQrImg, {
+          text: yaUrl, width: 110, height: 110,
+          colorDark: '#1e1b4b', colorLight: '#ffffff',
+          correctLevel: QRCode.CorrectLevel.M
+        });
+        $('pdf-qr-url').textContent = yaUrl.slice(0, 80) + '...';
+        pdfQrBlock.style.display = 'flex';
+      } catch(e) {}
+    }
+  }
   window.print();
 });
 
@@ -2479,7 +2474,6 @@ function fillWarehouse() {
     _manual: true
   };
   render();
-  updateOptimizeBtn();
   showToast('🏭 Склад Мытищи установлен как точка отправления');
 }
 
