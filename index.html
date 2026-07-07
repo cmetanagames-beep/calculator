@@ -1271,7 +1271,7 @@ function analyzeTraffic(osrmHours, pointCount) {
 
   const cleanTime    = osrmHours;
   const trafficTime  = osrmHours * trafficFactor;
-  const unloadTime   = (pointCount - 1) * 0.5;
+  const unloadTime   = (pointCount - 1) * 0.333;
   const totalTime    = trafficTime + unloadTime;
   const extraMinutes = Math.round((trafficTime - cleanTime) * 60);
 
